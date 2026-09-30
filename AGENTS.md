@@ -4,7 +4,7 @@
 
 ## Проект
 
-Монорепозиторий открытых пакетов ИИ-инфраструктуры для 1С-разработки: `russian-llm-pack` (LLM-слой с роутингом), `bsl-verify` (статическая проверка BSL), `harness-loop` (agent loop поверх обоих). Пакеты ниже по стеку должны оставаться самодостаточными — их знает только `harness-loop`.
+Монорепозиторий открытых пакетов ИИ-инфраструктуры для 1С-разработки: `russian-llm-pack` (LLM-слой с роутингом), `bsl-verify` (статическая проверка BSL), `harness-loop` (agent loop поверх обоих), `agents-md` (генератор AGENTS.md, самостоятельно). Пакеты ниже по стеку должны оставаться самодостаточными — их знает только `harness-loop`; `agents-md` ни от кого не зависит (чистый stdlib).
 
 ## Жёсткие правила
 
@@ -34,13 +34,21 @@ packages/
 │       ├── runner.py          # java/jar discovery + subprocess
 │       ├── verifier.py        # BslVerifier: dir / files / module_text
 │       └── cli.py             # bsl-check / bsl-doctor
-└── harness-loop/              # agent loop: генерация→верификация→фикс
+├── harness-loop/              # agent loop: генерация→верификация→фикс
     └── src/harness_loop/
         ├── types.py           # LoopConfig / IterationLog / LoopResult
         ├── extract.py         # извлечение BSL из ответа LLM (фенсы/эвристика)
         ├── prompt.py          # системный / task / fix промпты
         ├── loop.py            # BslAgentLoop + RouterPort (Router→LLMPort)
         └── cli.py             # harness-loop run / doctor
+└── agents-md/                 # генератор AGENTS.md (зависимостей нет)
+    └── src/agents_md/
+        ├── types.py           # ProjectInfo / StructureEntry / KIND_*
+        ├── detect.py          # анализ: 1C-edt / 1C-xml / python / js-ts / generic
+        ├── structure.py       # ограниченный сканер каталогов + дерево
+        ├── generate.py        # RU-шаблоны по типу проекта
+        ├── validate.py        # UTF-8 / 32 KiB / обязательные разделы
+        └── cli.py             # agents-md init / validate
 ```
 
 ## Ключевые контракты
@@ -48,16 +56,24 @@ packages/
 - **russian-llm-pack:** харнесс знает только `LLMPort`. Retry-политика в Router, не в SDK (`max_retries=0`). Классификация ошибок: auth → скип провайдера; transient → retry; request → следующая модель. Провайдер без ключа не ломает систему.
 - **bsl-verify:** путь данных `staging dir → analyze -r json → parser → policy → VerifyResult`. Exit-коды CLI: 0 прошёл / 1 нарушения / 2 окружение. Позиции LSP 0-based внутри, 1-based в человекочитаемом выводе. Отфильтрованные политикой диагностики не существуют нигде.
 - **harness-loop:** цикл `LLM → extract → verify → fix-промпт с диагностиками → ...` со стоп-условиями passed / бюджет / llm_error / verifier_error. Доменные ошибки НЕ бросаются наружу — превращаются в `failure_reason`. `RouterPort` — единственная точка входа роутинга в цикл. Feedback-промпты капятся (`max_feedback_lines`), диагностики сортированы: Error первыми. CLI: exit 0/1/2 в конвенции репо, `--version` обязан жить на корневом И сабпарсерах (урок bsl-check).
+- **agents-md:** анализ только по файловой системе — никогда не исполняет код проекта и не читает `.env`. Сгенерированный файл — черновик: человек проверяет и коммитит. Лимит 32 KiB — каскадный лимит стандарта, не наш каприз. Валидатор принимает RU-алиасы обязательных разделов. Никаких зависимостей и шаблонизаторов — только stdlib.
 
-## Команды
+## Установка
 
 ```bash
 pip install -e "packages/russian-llm-pack[dev]"   # порядок важен: сначала нижние слои
 pip install -e "packages/bsl-verify[dev]"
 pip install -e "packages/harness-loop[dev]"
+pip install -e "packages/agents-md[dev]"
+```
+
+## Тестирование
+
+```bash
 cd packages/russian-llm-pack && pytest -q     # юнит
 cd packages/bsl-verify && pytest -q           # юнит
 cd packages/harness-loop && pytest -q         # юнит (фейки, без мира)
+cd packages/agents-md && pytest -q            # юнит (tmp-проекты)
 # опционально, с окружением:
 BSL_LS_JAR=... pytest -m integration -v       # живой bsl LS (bsl-verify, harness-loop)
 DEEPSEEK_API_KEY=... pytest -m live -v        # живой LLM (russian-llm-pack, harness-loop)
@@ -66,6 +82,5 @@ DEEPSEEK_API_KEY=... pytest -m live -v        # живой LLM (russian-llm-pack
 ## Куда расти (по порядку)
 
 1. judge-цепь в `harness-loop` (второе мнение другой модели о финальном коде) + телеметрия итераций в Langfuse через события роутера
-2. AGENTS.md Generator (генерация контекста репо для агентов по 1С-проектам — лёгкий, отдельный пакет)
-3. Skill Registry client
-4. Движок DeepAgents/LangGraph для задач с планированием и подзадачами — потребляет те же порты (`LLMPort`, `BslVerifier`), текущий цикл остаётся эталоном поведения
+2. Skill Registry client
+3. Движок DeepAgents/LangGraph для задач с планированием и подзадачами — потребляет те же порты (`LLMPort`, `BslVerifier`), текущий цикл остаётся эталоном поведения

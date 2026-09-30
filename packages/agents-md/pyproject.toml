@@ -1,0 +1,49 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "agents-md"
+version = "0.1.0"
+description = "AGENTS.md generator for AI coding agents: project analyzer (python / js-ts / 1C-EDT / 1C-XML / generic), Russian-language AGENTS.md builder, standard validator"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Pradushkoai" }]
+keywords = ["agents-md", "agents", "ai-agents", "1c", "bsl", "developer-tools"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Documentation",
+]
+dependencies = []  # pure stdlib — the whole point
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
+
+[project.scripts]
+agents-md = "agents_md.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/Pradushkoai/ai-harness-os"
+Issues = "https://github.com/Pradushkoai/ai-harness-os/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/agents_md"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-m 'not live and not integration'"
+markers = [
+    "integration: runs against a real project directory (explicitly opt-in)",
+    "live: kept for symmetry with sibling packages",
+]

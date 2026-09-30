@@ -19,6 +19,8 @@ jobs:
             smoke: "bsl-check --version"
           - name: harness-loop
             smoke: "harness-loop --version"
+          - name: agents-md
+            smoke: "agents-md --version"
     name: ${{ matrix.package.name }} / py${{ matrix.python-version }}
     steps:
       - uses: actions/checkout@v4
@@ -34,6 +36,7 @@ jobs:
           pip install -e "packages/russian-llm-pack[dev]"
           pip install -e "packages/bsl-verify[dev]"
           pip install -e "packages/harness-loop[dev]"
+          pip install -e "packages/agents-md[dev]"
 
       - name: Run unit tests (no network, no java, no keys)
         working-directory: packages/${{ matrix.package.name }}
