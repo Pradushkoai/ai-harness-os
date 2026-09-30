@@ -1,15 +1,18 @@
-# Changelog
+# Changelog — ai-harness-os (репозиторий)
 
-Формат — [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/), версионирование — [SemVer](https://semver.org/lang/ru/).
+Формат — [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/). История отдельных пакетов — в их собственных CHANGELOG.
+
+## [0.2.0] — 2026-09-30
+
+### Changed
+- **Реструктуризация в монорепозиторий `packages/`:** `russian-llm-pack` переехал из корня в `packages/russian-llm-pack/` (git mv, история сохранена). Импорт и CLI не изменились — только путь установки: `pip install -e packages/russian-llm-pack`.
+- CI: матрица «пакет × Python 3.10–3.13», smoke CLI для каждого пакета.
+
+### Added
+- **Пакет `bsl-verify` v0.1.0** — адаптер статической проверки 1C/BSL поверх bsl-language-server (проверено на v1.0.7): парсер реального JSON-отчёта (fileinfos/URI/PascalCase-severity/метрики), policy-движок (max_errors/max_warnings/ignore/only), staging с маппингом путей, `verify_module_text()` для agent loop, CLI `bsl-check`/`bsl-doctor`, 82 юнит-теста + 6 живых интеграционных. Чистый stdlib.
+- Корневой README монорепо, AGENTS.md дополнен правилами bsl-verify.
 
 ## [0.1.0] — 2026-09-30
 
 ### Added
-- `LLMPort` — стабильный интерфейс LLM-слоя (complete / stream), sync-first.
-- Generic `OpenAICompatibleAdapter` — один движок для всех OpenAI-compatible провайдеров, с маппингом ошибок (auth / transient / request).
-- Пресеты провайдеров: `deepseek` (готов), `zai` (готов), `gigachat` (experimental, access-token), `yandexgpt` (native, v0.2).
-- `Router` — маршрутизация задач (coding / reasoning / cheap / judge) по fallback-цепочкам с retry-политикой и событиями (skip / retry / error / ok).
-- YAML-конфиг с env-подстановкой `${VAR}`, автодискавери (`$RLP_CONFIG` → `./rlp.config.yaml` → builtin).
-- CLI `rlp`: `check` (статус провайдеров и цепочек), `chat` (one-shot / stream / --model / --task / --verbose).
-- Юнит-тесты на моках (без сети), live smoke-тесты (`pytest -m live`).
-- CI на GitHub Actions: Python 3.10–3.13.
+- Первый коммит: пакет `russian-llm-pack` v0.1.0 (LLMPort, generic OpenAI-compatible адаптер, пресеты deepseek/zai/gigachat/yandexgpt, роутер с fallback, CLI `rlp`, 63 юнит-теста + живой smoke на DeepSeek, CI).

@@ -31,3 +31,4 @@ htmlcov/
 *.swp
 .DS_Store
 Thumbs.db
+bsl-json.json

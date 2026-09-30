@@ -1,0 +1,50 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "bsl-verify"
+version = "0.1.0"
+description = "1C/BSL static verification adapter over bsl-language-server: L0/L1 backpressure sensor for AI agent loops"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Pradushkoai" }]
+keywords = ["1c", "bsl", "bsl-language-server", "lsp", "static-analysis", "ai-agents", "backpressure"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Quality Assurance",
+]
+dependencies = []  # pure stdlib — the whole point
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
+
+[project.scripts]
+bsl-check = "bsl_verify.cli:main_check"
+bsl-doctor = "bsl_verify.cli:main_doctor"
+
+[project.urls]
+Homepage = "https://github.com/Pradushkoai/ai-harness-os"
+Issues = "https://github.com/Pradushkoai/ai-harness-os/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/bsl_verify"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-m 'not live and not integration'"
+markers = [
+    "integration: needs java + bsl-language-server.jar (set BSL_LS_JAR); runs real analysis",
+    "live: live network/API tests (kept for symmetry with russian-llm-pack)",
+]
