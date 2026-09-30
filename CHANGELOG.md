@@ -2,6 +2,12 @@
 
 Формат — [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/). История отдельных пакетов — в их собственных CHANGELOG.
 
+## [0.3.0] — 2026-09-30
+
+### Added
+- **Пакет `harness-loop` v0.1.0** — первый продукт харнесса: цикл «генерация → верификация → исправление» (backpressure L0/L1) над `LLMPort` (russian-llm-pack) и `BslVerifier` (bsl-verify). Извлечение BSL из ответа модели (фенсы/эвристики), fix-промпты с диагностиками верификатора, бюджет итераций, полная телеметрия итераций (токены/латентности/диагностики), CLI `harness-loop run/doctor` (exit 0/1/2). 63 юнит-теста на фейках + 3 интеграционных (fake LLM + реальный bsl LS: полный цикл ломает→чинит) + live-тест. Роутинг и fallback — через `RouterPort`, ошибка любого слоя не роняет цикл.
+- CI: установка всех пакетов в порядке зависимостей (russian-llm-pack → bsl-verify → harness-loop), smoke для `harness-loop --version`.
+
 ## [0.2.1] — 2026-09-30
 
 ### Fixed

@@ -17,6 +17,8 @@ jobs:
             smoke: "rlp --version"
           - name: bsl-verify
             smoke: "bsl-check --version"
+          - name: harness-loop
+            smoke: "harness-loop --version"
     name: ${{ matrix.package.name }} / py${{ matrix.python-version }}
     steps:
       - uses: actions/checkout@v4
@@ -26,10 +28,12 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Install package with dev extras
+      - name: Install all packages (dependency order) with dev extras
         run: |
           python -m pip install --upgrade pip
-          pip install -e "packages/${{ matrix.package.name }}[dev]"
+          pip install -e "packages/russian-llm-pack[dev]"
+          pip install -e "packages/bsl-verify[dev]"
+          pip install -e "packages/harness-loop[dev]"
 
       - name: Run unit tests (no network, no java, no keys)
         working-directory: packages/${{ matrix.package.name }}

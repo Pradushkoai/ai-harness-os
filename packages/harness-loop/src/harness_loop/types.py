@@ -1,0 +1,166 @@
+"""Core data types for harness-loop.
+
+The loop is a pure orchestrator over two ports:
+    - an LLMPort (russian-llm-pack) that generates BSL code,
+    - a BslVerifier (bsl-verify) that gates it (backpressure L0/L1).
+
+Everything here is plain data: no I/O, no provider imports — which keeps
+the loop unit-testable with fakes (repo rule: tests without the world).
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Optional
+
+
+@dataclass(frozen=True)
+class LoopConfig:
+    """Loop behaviour knobs.
+
+    Attributes:
+        max_iterations: total LLM call budget (initial attempt + fixes). Default 3.
+        filename: module filename passed to verify_module_text and shown in the
+            diagnostic lines fed back to the model.
+        max_feedback_lines: cap on diagnostic lines in the fix prompt — keeps
+            the prompt from exploding on noisy modules.
+        temperature: optional override forwarded to the LLM port.
+        max_tokens: optional override forwarded to the LLM port.
+    """
+
+    max_iterations: int = 3
+    filename: str = "module.bsl"
+    max_feedback_lines: int = 25
+    temperature: Optional[float] = None
+    max_tokens: Optional[int] = None
+
+    def __post_init__(self) -> None:
+        if self.max_iterations < 1:
+            raise ValueError(f"max_iterations must be >= 1, got {self.max_iterations}")
+        if self.max_feedback_lines < 1:
+            raise ValueError(
+                f"max_feedback_lines must be >= 1, got {self.max_feedback_lines}"
+            )
+
+
+@dataclass
+class IterationLog:
+    """One generate-verify pass of the loop."""
+
+    index: int  # 1-based
+    model: str = ""
+    code_extracted: bool = False
+    verified: Optional[bool] = None
+    errors: int = 0
+    warnings: int = 0
+    informations: int = 0
+    hints: int = 0
+    diagnostics: list = field(default_factory=list)  # list[str], capped
+    note: str = ""  # e.g. "no BSL code extracted"
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    llm_latency_ms: float = 0.0
+    verify_ms: float = 0.0
+
+    def to_dict(self) -> dict:
+        return {
+            "index": self.index,
+            "model": self.model,
+            "code_extracted": self.code_extracted,
+            "verified": self.verified,
+            "errors": self.errors,
+            "warnings": self.warnings,
+            "informations": self.informations,
+            "hints": self.hints,
+            "diagnostics": list(self.diagnostics),
+            "note": self.note,
+            "prompt_tokens": self.prompt_tokens,
+            "completion_tokens": self.completion_tokens,
+            "llm_latency_ms": round(self.llm_latency_ms, 1),
+            "verify_ms": round(self.verify_ms, 1),
+        }
+
+
+@dataclass
+class LoopResult:
+    """Outcome of one loop run: iterations, final code, verdict.
+
+    failure_reason is empty on success; otherwise one of:
+        budget_exhausted — max_iterations reached, code still failing
+        llm_error        — the LLM port failed (no keys / chain exhausted)
+        verifier_error   — bsl-verify environment failure (no java / no jar)
+    """
+
+    passed: bool
+    code: str
+    iterations: list = field(default_factory=list)  # list[IterationLog]
+    failure_reason: str = ""
+    error: Optional[str] = None
+
+    @property
+    def total_prompt_tokens(self) -> int:
+        return sum(i.prompt_tokens for i in self.iterations)
+
+    @property
+    def total_completion_tokens(self) -> int:
+        return sum(i.completion_tokens for i in self.iterations)
+
+    @property
+    def total_llm_ms(self) -> float:
+        return sum(i.llm_latency_ms for i in self.iterations)
+
+    @property
+    def total_verify_ms(self) -> float:
+        return sum(i.verify_ms for i in self.iterations)
+
+    def summary_lines(self) -> list[str]:
+        """Human/agent-readable report, one line per iteration."""
+
+        status = "PASSED" if self.passed else "FAILED"
+        head = f"BSL loop: {status} after {len(self.iterations)} iteration(s)"
+        if not self.passed and self.failure_reason:
+            head += f" — {self.failure_reason}"
+        tokens = (
+            f"tokens: {self.total_prompt_tokens} in + "
+            f"{self.total_completion_tokens} out"
+        )
+        timing = (
+            f"llm {self.total_llm_ms / 1000.0:.1f}s, "
+            f"verify {self.total_verify_ms / 1000.0:.1f}s"
+        )
+        lines = [f"{head} [{tokens}; {timing}]"]
+        for it in self.iterations:
+            if not it.code_extracted:
+                desc = it.note or "no BSL code extracted"
+            elif it.verified is None:
+                desc = "not verified"
+            elif it.verified:
+                desc = f"verify PASSED ({it.errors} error, {it.warnings} warning, {it.infos} info)"
+            else:
+                desc = (
+                    f"verify FAILED ({it.errors} error, {it.warnings} warning, "
+                    f"{it.infos} info)"
+                )
+            model = f" [{it.model}]" if it.model else ""
+            lines.append(f"  iter {it.index}{model}: {desc}")
+        if self.error:
+            lines.append(f"  error: {self.error}")
+        return lines
+
+    def to_dict(self) -> dict:
+        """JSON-safe representation (used by `harness-loop run --json`)."""
+
+        return {
+            "passed": self.passed,
+            "failure_reason": self.failure_reason,
+            "error": self.error,
+            "iterations": [i.to_dict() for i in self.iterations],
+            "totals": {
+                "iterations": len(self.iterations),
+                "prompt_tokens": self.total_prompt_tokens,
+                "completion_tokens": self.total_completion_tokens,
+                "llm_latency_ms": round(self.total_llm_ms, 1),
+                "verify_ms": round(self.total_verify_ms, 1),
+            },
+            "code": self.code,
+        }

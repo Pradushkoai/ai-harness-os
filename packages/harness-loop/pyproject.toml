@@ -1,0 +1,52 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "harness-loop"
+version = "0.1.0"
+description = "Agent loop MVP for 1C/BSL: LLM generation (russian-llm-pack) gated by bsl-language-server verification (bsl-verify) — backpressure L0/L1 as a retry loop"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Pradushkoai" }]
+keywords = ["1c", "bsl", "ai-agents", "agent-loop", "backpressure", "llm", "harness"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Quality Assurance",
+]
+dependencies = [
+    "russian-llm-pack>=0.1.0",
+    "bsl-verify>=0.1.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
+
+[project.scripts]
+harness-loop = "harness_loop.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/Pradushkoai/ai-harness-os"
+Issues = "https://github.com/Pradushkoai/ai-harness-os/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/harness_loop"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-m 'not live and not integration'"
+markers = [
+    "integration: needs java + bsl-language-server.jar (set BSL_LS_JAR); runs real analysis",
+    "live: live LLM calls (needs a provider key, e.g. DEEPSEEK_API_KEY) + jar",
+]

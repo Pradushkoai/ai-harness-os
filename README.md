@@ -9,9 +9,10 @@
 | Пакет | Что это | Статус |
 |---|---|---|
 | [`russian-llm-pack`](packages/russian-llm-pack/) | Единый LLM-порт: DeepSeek / Z.ai / GigaChat / YandexGPT, YAML-роутинг задач, fallback-цепочки, CLI `rlp` | v0.1.0 — работает вживую |
-| [`bsl-verify`](packages/bsl-verify/) | Статическая проверка 1С/BSL через bsl-language-server: backpressure L0/L1, политика как код, CLI `bsl-check` / `bsl-doctor` | v0.1.0 — работает вживую (v1.0.7 LS) |
+| [`bsl-verify`](packages/bsl-verify/) | Статическая проверка 1С/BSL через bsl-language-server: backpressure L0/L1, политика как код, CLI `bsl-check` / `bsl-doctor` | v0.1.1 — работает вживую (v1.0.7 LS) |
+| [`harness-loop`](packages/harness-loop/) | Цикл «генерация → верификация → исправление»: LLM пишет BSL-модуль, верификатор гейтит, диагностики идут обратно в модель; CLI `harness-loop run/doctor` | v0.1.0 — интеграционно проверен (fake LLM + реальный LS) |
 
-**Дальше по плану:** AGENTS.md Generator → Skill Registry client → интеграция в agent loop (DeepAgents + LangGraph).
+**Дальше по плану:** judge-цепь в цикл + телеметрия Langfuse → AGENTS.md Generator → движок DeepAgents для задач с планированием (порты те же).
 
 ## Принципы
 
@@ -27,7 +28,8 @@
 ai-harness-os/
 ├── packages/
 │   ├── russian-llm-pack/     # LLM-слой (порт, роутер, fallback, rlp CLI)
-│   └── bsl-verify/           # BSL-верификация (L0/L1 сенсор, bsl-check CLI)
+│   ├── bsl-verify/           # BSL-верификация (L0/L1 сенсор, bsl-check CLI)
+│   └── harness-loop/         # agent loop (генерация→верификация→фикс, harness-loop CLI)
 ├── .github/workflows/ci.yml  # матрица: пакет × python 3.10–3.13
 ├── AGENTS.md                 # правила для AI-агентов, работающих с репо
 ├── CHANGELOG.md              # новости репозитория
@@ -49,6 +51,11 @@ rlp check && rlp chat "привет"
 pip install -e packages/bsl-verify
 bsl-doctor                 # что не хватает и как починить
 bsl-check src/             # проверка с диагностиками и exit-кодами
+
+# Agent loop: генерация → верификация → исправление
+pip install -e "packages/harness-loop[dev]"
+harness-loop doctor        # оба слоя: ключи + java/jar
+harness-loop run "Напиши функцию СуммаДвухЧисел(А, Б)" --save module.bsl
 ```
 
 ## Разработка
@@ -56,10 +63,12 @@ bsl-check src/             # проверка с диагностиками и e
 ```bash
 pip install -e "packages/russian-llm-pack[dev]"
 pip install -e "packages/bsl-verify[dev]"
+pip install -e "packages/harness-loop[dev]"
 cd packages/russian-llm-pack && pytest -q          # без сети
 cd packages/bsl-verify && pytest -q                # без java
-BSL_LS_JAR=... pytest -m integration -v            # живой bsl LS (опционально)
-DEEPSEEK_API_KEY=... pytest -m live -v             # живой LLM (опционально)
+cd packages/harness-loop && pytest -q              # без сети/java/токенов
+BSL_LS_JAR=... pytest -m integration -v            # живой bsl LS (bsl-verify, harness-loop)
+DEEPSEEK_API_KEY=... pytest -m live -v             # живой LLM (russian-llm-pack, harness-loop)
 ```
 
 ## Лицензия
