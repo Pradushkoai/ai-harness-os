@@ -1,0 +1,52 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "russian-llm-pack"
+version = "0.1.0"
+description = "Unified LLM port for sanction-friendly providers (DeepSeek, Z.ai, GigaChat, YandexGPT) with YAML routing and fallback chains"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Pradushkoai" }]
+keywords = ["llm", "ai", "deepseek", "zai", "gigachat", "yandexgpt", "router", "fallback", "1c"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+    "openai>=1.40",
+    "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-timeout>=2.3",
+]
+
+[project.scripts]
+rlp = "russian_llm_pack.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/Pradushkoai/ai-harness-os"
+Issues = "https://github.com/Pradushkoai/ai-harness-os/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/russian_llm_pack"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-m 'not live'"
+markers = [
+    "live: live API smoke tests (run explicitly: pytest -m live)",
+]

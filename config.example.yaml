@@ -1,0 +1,41 @@
+# Пример конфигурации RLP.
+# Положи как ./rlp.config.yaml (или укажи путь в $RLP_CONFIG).
+# СЕКРЕТОВ ЗДЕСЬ НЕТ И НЕ ДОЛЖНО БЫТЬ — только имена env-переменных.
+
+providers:
+  deepseek:
+    api_key_env: DEEPSEEK_API_KEY          # default, можно не указывать
+    # base_url: https://api.deepseek.com   # override при необходимости
+
+  zai:
+    api_key_env: ZAI_API_KEY
+    # base_url: https://api.z.ai/api/paas/v4          # международный
+    # base_url: https://open.bigmodel.cn/api/paas/v4  # mainland-альтернатива
+    # default_model: glm-4.6
+
+  gigachat:
+    api_key_env: GIGACHAT_ACCESS_TOKEN     # experimental: токен из OAuth
+    # default_model: GigaChat-Pro
+
+  yandexgpt:
+    api_key_env: YAIAM_TOKEN               # native-адаптер планируется в v0.2
+    # base_url: https://llm.api.cloud.yandex.net/foundationModels/v1
+
+routing:
+  tasks:
+    # цепочка = порядок fallback; провайдеры без ключей пропускаются
+    coding:      [deepseek/deepseek-chat, zai/glm-4.6, gigachat/GigaChat-Pro]
+    reasoning:   [deepseek/deepseek-reasoner, zai/glm-4.6]
+    cheap:       [zai/glm-4.5-air, deepseek/deepseek-chat, gigachat/GigaChat-Lite]
+    judge:       [zai/glm-4.6, deepseek/deepseek-chat]   # судья ≠ модель-кодер
+
+  params:
+    coding:    {temperature: 0.2}
+    reasoning: {}
+    cheap:     {temperature: 0.3}
+    judge:     {temperature: 0.0}
+
+defaults:
+  task: coding
+  retries: 2        # повтора на transient-ошибку (429/5xx/timeout)
+  timeout_s: 60
