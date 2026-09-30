@@ -2,6 +2,12 @@
 
 Формат — [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/), версионирование — [SemVer](https://semver.org/lang/ru/).
 
+## [0.1.1] — 2026-09-30
+
+### Fixed
+- `bsl-check --version` и `bsl-doctor --version` падали с exit 2: консольные entry points приклеивают subcommand вперёд аргументов (`main_check` → `_main(["check", ...])`), поэтому `--version` разбирался сабпарсером, у которого его не было. Сабпарсеры `check`/`doctor` получили собственный `--version`. Это чинило красный CI smoke (`bsl-check --version`) для всей матрицы bsl-verify.
+- Добавлены regression-тесты на консольные entry points (`main_check(["--version"])` / `main_doctor(["--version"])`) и на явную форму `check --version` — прежний тест проверял только `_main(["--version"])`, путь, который реальные скрипты не используют.
+
 ## [0.1.0] — 2026-09-30
 
 ### Added

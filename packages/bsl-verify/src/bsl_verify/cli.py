@@ -45,6 +45,10 @@ def _build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     check = sub.add_parser("check", help="verify files or directories")
+    # Console scripts prepend the subcommand (see main_check), so `bsl-check
+    # --version` is parsed by THIS subparser — it needs its own --version
+    # (regression: CI smoke used to die with exit 2, "required: paths").
+    check.add_argument("--version", action="version", version=f"bsl-check {__version__}")
     check.add_argument("paths", nargs="+", help=".bsl/.os files or directories")
     check.add_argument("--config", default=None, help="bsl-language-server JSON config (-c)")
     check.add_argument("--max-errors", type=int, default=0, help="policy: allowed errors (default 0)")
@@ -56,6 +60,7 @@ def _build_parser() -> argparse.ArgumentParser:
     _common_verifier_args(check)
 
     doctor = sub.add_parser("doctor", help="check java/jar environment")
+    doctor.add_argument("--version", action="version", version=f"bsl-doctor {__version__}")
     _common_verifier_args(doctor)
     return parser
 

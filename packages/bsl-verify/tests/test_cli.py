@@ -142,6 +142,31 @@ class TestVersion:
         assert excinfo.value.code == 0
         assert "bsl-check" in capsys.readouterr().out
 
+    def test_console_script_version_check(self, capsys):
+        """Regression (CI smoke): `bsl-check --version` exited 2.
+
+        main_check() prepends the `check` subcommand, so --version is parsed
+        by the SUBparser — which used to have no --version of its own and
+        failed with 'the following arguments are required: paths'.
+        """
+        with pytest.raises(SystemExit) as excinfo:
+            cli.main_check(["--version"])
+        assert excinfo.value.code == 0
+        assert "bsl-check" in capsys.readouterr().out
+
+    def test_console_script_version_doctor(self, capsys):
+        """Regression (CI smoke): `bsl-doctor --version` exited 2."""
+        with pytest.raises(SystemExit) as excinfo:
+            cli.main_doctor(["--version"])
+        assert excinfo.value.code == 0
+        assert "bsl-doctor" in capsys.readouterr().out
+
+    def test_explicit_subcommand_version(self, capsys):
+        with pytest.raises(SystemExit) as excinfo:
+            cli._main(["check", "--version"])
+        assert excinfo.value.code == 0
+        assert "bsl-check" in capsys.readouterr().out
+
 
 class TestConsoleEntryPoints:
     def test_main_check_reads_sys_argv(self, monkeypatch, capsys, tmp_path):

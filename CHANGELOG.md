@@ -2,6 +2,11 @@
 
 Формат — [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/). История отдельных пакетов — в их собственных CHANGELOG.
 
+## [0.2.1] — 2026-09-30
+
+### Fixed
+- **CI smoke для bsl-verify был красным:** `bsl-check --version` (и `bsl-doctor --version`) возвращали exit 2 — консольные entry points приклеивают subcommand вперёд аргументов, а сабпарсеры не знали `--version`. Починено в `bsl-verify` v0.1.1, добавлены regression-тесты на реальные entry points.
+
 ## [0.2.0] — 2026-09-30
 
 ### Changed

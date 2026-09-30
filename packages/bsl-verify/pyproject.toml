@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "bsl-verify"
-version = "0.1.0"
+version = "0.1.1"
 description = "1C/BSL static verification adapter over bsl-language-server: L0/L1 backpressure sensor for AI agent loops"
 readme = "README.md"
 requires-python = ">=3.10"
