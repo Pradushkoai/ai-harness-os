@@ -44,11 +44,13 @@ tasks:
 class TestLoadTasks:
     def test_bundled_set_loads(self):
         tasks = load_tasks(bundled_tasks_path())
-        assert len(tasks) == 30  # v0.2: 10 -> 30
+        assert len(tasks) == 54  # v0.3: 10 -> 30 -> 54
         ids = [t.id for t in tasks]
-        assert len(set(ids)) == 30  # all unique
+        assert len(set(ids)) == 54  # all unique
         assert "func-sum-two-numbers" in ids
         assert "query-doc-period" in ids
+        assert "table-create-catalog" in ids
+        assert "func-inn-10-checksum" in ids
         assert all(t.prompt for t in tasks)
         assert all(t.reference.strip() for t in tasks)
 
@@ -57,6 +59,8 @@ class TestLoadTasks:
         assert tasks["func-sum-two-numbers"].difficulty == "easy"
         assert tasks["proc-safe-division"].category == "errors"
         assert tasks["func-array-sum"].difficulty == "medium"
+        assert tasks["table-group-sum"].category == "table"
+        assert tasks["table-group-sum"].difficulty == "hard"
 
     def test_bundled_v02_new_categories(self):
         """v0.2 growth: dates / collections / query + hard tasks exist."""
@@ -65,6 +69,20 @@ class TestLoadTasks:
         assert {"dates", "collections", "query"} <= categories
         difficulties = [t.difficulty for t in tasks]
         assert difficulties.count("hard") >= 4
+
+    def test_bundled_v03_counts(self):
+        """v0.3 growth: table/numbers categories, exact difficulty mix."""
+        from collections import Counter
+
+        tasks = load_tasks(bundled_tasks_path())
+        categories = Counter(t.category for t in tasks)
+        assert categories["table"] == 6
+        assert categories["numbers"] == 4
+        assert categories["query"] == 5
+        assert categories["structure"] == 5
+
+        difficulties = Counter(t.difficulty for t in tasks)
+        assert difficulties == {"easy": 10, "medium": 31, "hard": 13}
 
     def test_bundled_difficulty_values_valid(self):
         tasks = load_tasks(bundled_tasks_path())
@@ -220,6 +238,37 @@ class TestReport:
         assert "| ❌ | task-b |" in text
         assert "budget_exhausted" in text
 
+    def test_markdown_breakdown_sections(self):
+        text = self._report().to_markdown()
+        assert "## По сложности" in text
+        assert "## По категориям" in text
+        assert "| easy | 1 | 1 | 100% |" in text
+        assert "| hard | 0 | 1 | 0% |" in text
+
+    def test_by_difficulty_breakdown(self):
+        report = self._report()
+        assert report.by_difficulty == {
+            "easy": {"total": 1, "resolved": 1},
+            "hard": {"total": 1, "resolved": 0},
+        }
+
+    def test_by_category_breakdown(self):
+        report = self._report()
+        assert report.by_category == {
+            "function": {"total": 1, "resolved": 1},
+            "general": {"total": 1, "resolved": 0},
+        }
+
+    def test_to_dict_includes_breakdowns(self):
+        payload = self._report().to_dict()
+        assert payload["by_difficulty"]["easy"]["resolved"] == 1
+        assert payload["by_category"]["function"]["total"] == 1
+
+    def test_summary_lines_difficulty_line(self):
+        lines = "\n".join(self._report().summary_lines())
+        assert "easy: 1/1" in lines
+        assert "hard: 0/1" in lines
+
     def test_save_json_and_markdown(self, tmp_path):
         report = self._report()
         json_path = report.save_json(tmp_path / "report.json")
@@ -233,6 +282,8 @@ class TestReport:
         report = EvalReport(outcomes=[])
         assert report.pass_rate == 0.0
         assert report.total_iterations == 0
+        assert report.by_category == {}
+        assert report.by_difficulty == {}
 
 
 def _write_tasks(tmp: Path | None = None) -> Path:

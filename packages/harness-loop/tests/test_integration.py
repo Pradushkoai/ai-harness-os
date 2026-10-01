@@ -135,4 +135,4 @@ class TestBenchmarkReferences:
     def test_bundled_reference_count(self):
         from harness_loop.evals import bundled_tasks_path, load_tasks
 
-        assert len(load_tasks(bundled_tasks_path())) == 30
+        assert len(load_tasks(bundled_tasks_path())) == 54  # v0.3: 30 -> 54

@@ -30,7 +30,7 @@ from .prompt import SYSTEM_PROMPT, fix_prompt, task_prompt
 from .telemetry import LangfuseTelemetry
 from .types import IterationLog, LoopConfig, LoopResult
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 __all__ = [
     "BslAgentLoop",

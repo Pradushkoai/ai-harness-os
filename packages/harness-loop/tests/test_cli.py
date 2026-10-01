@@ -63,8 +63,8 @@ def patched_judge(monkeypatch):
 def patched_eval_factories(monkeypatch):
     """LLM/verifier with plenty of OK responses (eval runs many tasks)."""
 
-    llm = FakeLLMPort([fenced(MODULE_OK)] * 50)
-    verifier = FakeVerifier([make_verify_result(passed=True)] * 50)
+    llm = FakeLLMPort([fenced(MODULE_OK)] * 60)
+    verifier = FakeVerifier([make_verify_result(passed=True)] * 60)
     monkeypatch.setattr(cli, "_build_llm", lambda args: llm)
     monkeypatch.setattr(cli, "_build_verifier", lambda args: verifier)
     return {"llm": llm, "verifier": verifier}
@@ -258,10 +258,13 @@ class TestEval:
         payload = json.loads(capsys.readouterr().out)
 
         assert code == 0
-        assert payload["total"] == 30  # v0.2 benchmark size
-        assert payload["resolved"] == 30
+        assert payload["total"] == 54  # v0.3 benchmark size
+        assert payload["resolved"] == 54
+        assert payload["by_difficulty"]["hard"]["total"] == 13
+        assert payload["by_category"]["table"]["total"] == 6
         assert report_json.is_file()
         assert "Mini SWE-bench-BSL" in report_md.read_text(encoding="utf-8")
+        assert "По категориям" in report_md.read_text(encoding="utf-8")
 
     def test_eval_bad_tasks_file_exit_two(self, patched_factories, capsys):
         code = cli.main(["eval", "--tasks", "нет_такого_файла.yaml"])
@@ -284,6 +287,52 @@ class TestEval:
 
         assert code == 0
         assert "2/2 resolved" in out
+
+    def test_eval_category_filter(self, patched_eval_factories, capsys):
+        code = cli.main(["eval", "--category", "table", "--json"])
+        payload = json.loads(capsys.readouterr().out)
+
+        assert code == 0
+        assert payload["total"] == 6
+        assert all(t["category"] == "table" for t in payload["tasks"])
+
+    def test_eval_difficulty_filter(self, patched_eval_factories, capsys):
+        code = cli.main(["eval", "--difficulty", "hard", "--json"])
+        payload = json.loads(capsys.readouterr().out)
+
+        assert code == 0
+        assert payload["total"] == 13
+        assert all(t["difficulty"] == "hard" for t in payload["tasks"])
+
+    def test_eval_multi_value_filter(self, patched_eval_factories, capsys):
+        code = cli.main(["eval", "--category", "table,numbers", "--json"])
+        payload = json.loads(capsys.readouterr().out)
+
+        assert code == 0
+        assert payload["total"] == 10
+
+    def test_eval_filter_applies_before_limit(self, patched_eval_factories, capsys):
+        """--difficulty hard --limit 3 = first 3 HARD tasks, not first 3 tasks."""
+
+        code = cli.main(["eval", "--difficulty", "hard", "--limit", "3", "--json"])
+        payload = json.loads(capsys.readouterr().out)
+
+        assert code == 0
+        assert payload["total"] == 3
+        assert [t["difficulty"] for t in payload["tasks"]] == ["hard"] * 3
+        assert payload["tasks"][0]["id"] == "func-fibonacci"
+
+    def test_eval_filter_no_match_exit_two(self, patched_eval_factories, capsys):
+        code = cli.main(["eval", "--category", "нет_такой"])
+
+        assert code == 2
+        assert "no tasks match" in capsys.readouterr().err
+
+    def test_eval_empty_filter_value_exit_two(self, patched_eval_factories, capsys):
+        code = cli.main(["eval", "--category", "   "])
+
+        assert code == 2
+        assert "at least one value" in capsys.readouterr().err
 
     def test_eval_version_subparser(self, capsys):
         with pytest.raises(SystemExit) as excinfo:

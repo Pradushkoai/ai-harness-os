@@ -83,6 +83,10 @@ def _build_parser() -> argparse.ArgumentParser:
     ev.add_argument("--version", action="version", version=f"harness-loop {__version__}")
     ev.add_argument("--tasks", default=None,
                     help="path to a tasks YAML (default: bundled v0 set)")
+    ev.add_argument("--category", default=None,
+                    help="run only these categories (comma-separated: table,query,...)")
+    ev.add_argument("--difficulty", default=None,
+                    help="run only these difficulties (comma-separated: easy,medium,hard)")
     ev.add_argument("--limit", type=int, default=None, help="run only the first N tasks")
     ev.add_argument("--context", default=None, help="project context as text")
     ev.add_argument("--max-iterations", type=int, default=3, help="LLM call budget per task")
@@ -246,6 +250,22 @@ def _run_eval(args: argparse.Namespace) -> int:
     except (OSError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
+
+    # Filters shrink the set BEFORE --limit: `--difficulty hard --limit 5`
+    # means "first 5 hard tasks", not "first 5 tasks if they happen to be hard".
+    for flag, field_name in (("category", "category"), ("difficulty", "difficulty")):
+        raw = getattr(args, flag, None)
+        if not raw:
+            continue
+        wanted = {v.strip() for v in raw.split(",") if v.strip()}
+        if not wanted:
+            print(f"error: --{flag} must list at least one value", file=sys.stderr)
+            return 2
+        tasks = [t for t in tasks if getattr(t, field_name) in wanted]
+        if not tasks:
+            print(f"error: no tasks match --{flag} {raw}", file=sys.stderr)
+            return 2
+
     if args.limit is not None:
         if args.limit < 1:
             print("error: --limit must be >= 1", file=sys.stderr)

@@ -40,6 +40,21 @@ BUNDLED_TASKS = Path(__file__).parent / "eval_data" / "tasks_v0.yaml"
 TaskCallback = Callable[["TaskOutcome"], None]
 
 
+def _breakdown_table(lines: list, title: str, groups: dict) -> None:
+    """Render a 'solved/total per group' markdown section (helper)."""
+
+    lines.append("")
+    lines.append(f"## {title}")
+    lines.append("")
+    lines.append("| Группа | Решено | Всего | % |")
+    lines.append("|---|---|---|---|")
+    for label, bucket in groups.items():
+        total = bucket["total"]
+        resolved = bucket["resolved"]
+        rate = f"{100.0 * resolved / total:.0f}%" if total else "—"
+        lines.append(f"| {label} | {resolved} | {total} | {rate} |")
+
+
 @dataclass(frozen=True)
 class BslTask:
     """One benchmark task: prompt + reference (+ classification)."""
@@ -124,6 +139,29 @@ class EvalReport:
             counts[reason] = counts.get(reason, 0) + 1
         return counts
 
+    def _breakdown(self, key: Callable[["TaskOutcome"], str]) -> dict:
+        """Group outcomes by a classifier; sorted for stable reports."""
+
+        groups: dict[str, dict[str, int]] = {}
+        for outcome in self.outcomes:
+            bucket = groups.setdefault(key(outcome), {"total": 0, "resolved": 0})
+            bucket["total"] += 1
+            if outcome.resolved:
+                bucket["resolved"] += 1
+        return dict(sorted(groups.items()))
+
+    @property
+    def by_category(self) -> dict:
+        """Per-category {total, resolved} — where the model is weak."""
+
+        return self._breakdown(lambda o: o.task.category)
+
+    @property
+    def by_difficulty(self) -> dict:
+        """Per-difficulty {total, resolved} — saturation detector."""
+
+        return self._breakdown(lambda o: o.task.difficulty)
+
     def summary_lines(self) -> list[str]:
         rate = f"{self.pass_rate * 100.0:.0f}%"
         head = (
@@ -132,6 +170,13 @@ class EvalReport:
             f"{self.total_prompt_tokens} in + {self.total_completion_tokens} out"
         )
         lines = [head]
+        by_difficulty = self.by_difficulty
+        if by_difficulty:
+            parts = [
+                f"{label}: {bucket['resolved']}/{bucket['total']}"
+                for label, bucket in by_difficulty.items()
+            ]
+            lines.append("  " + ", ".join(parts))
         for outcome in self.outcomes:
             status = "PASS" if outcome.resolved else "FAIL"
             detail = f"{outcome.iterations} iter"
@@ -153,6 +198,8 @@ class EvalReport:
             "total_prompt_tokens": self.total_prompt_tokens,
             "total_completion_tokens": self.total_completion_tokens,
             "failure_reasons": self.failure_reasons(),
+            "by_category": self.by_category,
+            "by_difficulty": self.by_difficulty,
             "tasks": [o.to_dict() for o in self.outcomes],
         }
 
@@ -167,10 +214,16 @@ class EvalReport:
             f"- Итераций суммарно: {self.total_iterations}",
             f"- Токены: {self.total_prompt_tokens} in + "
             f"{self.total_completion_tokens} out",
+        ]
+        if self.by_difficulty:
+            _breakdown_table(lines, "По сложности", self.by_difficulty)
+        if self.by_category:
+            _breakdown_table(lines, "По категориям", self.by_category)
+        lines.extend([
             "",
             "| Статус | Задача | Сложность | Итерации | Причина |",
             "|---|---|---|---|---|",
-        ]
+        ])
         for outcome in self.outcomes:
             status = "✅" if outcome.resolved else "❌"
             reason = "" if outcome.resolved else (
