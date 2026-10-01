@@ -97,7 +97,10 @@ class LoopResult:
         llm_error        — the LLM port failed (no keys / chain exhausted)
         verifier_error   — bsl-verify environment failure (no java / no jar)
 
-    judge is the parsed verdict when a judge ran and approved the module;
+    judge is the LAST judge verdict when a judge ran at all: the approving
+    verdict on success, or the last veto when the rejection survived the
+    budget (v0.5: previously vetoes were dropped and judge stayed None —
+    eval reports lost the score/issues of rejected tasks).
     judge_error is set when the judge LLM failed — in that case the code
     passed the verifier and passed=True is kept (the verifier stays the
     authority; a judge outage must not discard working code), the outage

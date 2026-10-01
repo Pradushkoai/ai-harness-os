@@ -103,6 +103,13 @@ def _build_parser() -> argparse.ArgumentParser:
     ev.add_argument("--judge", action="store_true", help="enable the LLM judge")
     ev.add_argument("--judge-chain", default=None, help="router chain for the judge LLM")
     ev.add_argument("--judge-model", default=None, help="explicit 'provider/model' for the judge")
+    ev.add_argument(
+        "--no-judge-reference",
+        action="store_true",
+        dest="no_judge_reference",
+        help="judge does NOT see gold solutions (plain mode, as in v0.4); "
+             "default: reference-aware judging",
+    )
     ev.add_argument("--langfuse", action="store_true", help="send telemetry to Langfuse")
     ev.add_argument("--save-report", default=None, dest="save_report",
                     help="write the JSON report to this file")
@@ -308,7 +315,9 @@ def _run_eval(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
 
-    report = run_eval(tasks, loop, on_task=_on_task)
+    report = run_eval(
+        tasks, loop, on_task=_on_task, use_reference=not args.no_judge_reference
+    )
 
     if telemetry is not None:
         telemetry.flush()

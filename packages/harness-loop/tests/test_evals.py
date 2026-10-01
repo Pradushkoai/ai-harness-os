@@ -205,6 +205,171 @@ class TestRunEval:
         assert report.resolved == 2
 
 
+class TestReferenceAwareEval:
+    """v0.5: references go to the judge; reports carry L2 aggregates."""
+
+    JUDGE_PASS = "VERDICT: PASS\nSCORE: 9\nREASONING: ок"
+    JUDGE_FAIL = "VERDICT: FAIL\nSCORE: 2\nISSUES:\n- семантика другая\n"
+
+    def _tasks(self):
+        return load_tasks(_write_tasks())
+
+    def test_references_reach_the_judge(self):
+        tasks = self._tasks()
+        llm = FakeLLMPort([fenced(MODULE_OK)] * 2)
+        verifier = FakeVerifier([make_verify_result(True)] * 2)
+        judge_llm = FakeLLMPort([self.JUDGE_PASS] * 2)
+        judge = Judge(judge_llm)
+        loop = BslAgentLoop(llm, verifier, LoopConfig(), judge=judge)
+
+        report = run_eval(tasks, loop)
+
+        assert report.judge_mode == "reference"
+        judge_users = [calls[1].content for calls in judge_llm.calls]
+        assert "Возврат 1" in judge_users[0]  # task-a reference
+        assert "Возврат 2" in judge_users[1]  # task-b reference
+
+    def test_references_never_reach_the_generator(self):
+        """The anti-cheating invariant, checked at the eval level."""
+        tasks = self._tasks()
+        llm = FakeLLMPort([fenced(MODULE_OK)] * 2)
+        verifier = FakeVerifier([make_verify_result(True)] * 2)
+        judge = Judge(FakeLLMPort([self.JUDGE_PASS] * 2))
+        loop = BslAgentLoop(llm, verifier, LoopConfig(), judge=judge)
+
+        run_eval(tasks, loop)
+
+        for messages in llm.calls:
+            for message in messages:
+                assert "Возврат 1" not in message.content
+                assert "Возврат 2" not in message.content
+
+    def test_use_reference_false_hides_etalon_from_judge(self):
+        tasks = self._tasks()
+        llm = FakeLLMPort([fenced(MODULE_OK)] * 2)
+        verifier = FakeVerifier([make_verify_result(True)] * 2)
+        judge_llm = FakeLLMPort([self.JUDGE_PASS] * 2)
+        judge = Judge(judge_llm)
+        loop = BslAgentLoop(llm, verifier, LoopConfig(), judge=judge)
+
+        report = run_eval(tasks, loop, use_reference=False)
+
+        assert report.judge_mode == "plain"
+        for calls in judge_llm.calls:
+            assert "Эталонное решение" not in calls[1].content
+
+    def test_judge_mode_none_without_judge(self):
+        tasks = self._tasks()
+        llm = FakeLLMPort([fenced(MODULE_OK)] * 2)
+        verifier = FakeVerifier([make_verify_result(True)] * 2)
+        loop = BslAgentLoop(llm, verifier, LoopConfig())
+
+        report = run_eval(tasks, loop)
+
+        assert report.judge_mode == "none"
+
+    def test_judge_mode_plain_when_tasks_lack_references(self, tmp_path):
+        source = tmp_path / "no_ref.yaml"
+        source.write_text(
+            "version: 1\ntasks:\n  - id: x\n    prompt: задача\n",
+            encoding="utf-8",
+        )
+        tasks = load_tasks(source)
+        llm = FakeLLMPort([fenced(MODULE_OK)])
+        verifier = FakeVerifier([make_verify_result(True)])
+        judge = Judge(FakeLLMPort([self.JUDGE_PASS]))
+        loop = BslAgentLoop(llm, verifier, LoopConfig(), judge=judge)
+
+        report = run_eval(tasks, loop)
+
+        assert report.judge_mode == "plain"
+
+    def test_judge_stats_aggregates(self):
+        tasks = self._tasks()
+        llm = FakeLLMPort([fenced(MODULE_OK)] * 2)
+        verifier = FakeVerifier([make_verify_result(True)] * 2)
+        judge = Judge(FakeLLMPort([self.JUDGE_PASS, self.JUDGE_FAIL]))
+        loop = BslAgentLoop(llm, verifier, LoopConfig(max_iterations=1), judge=judge)
+
+        report = run_eval(tasks, loop)
+
+        stats = report.judge_stats()
+        assert stats == {
+            "mode": "reference",
+            "judged": 2,
+            "approved": 1,
+            "vetoed": 1,
+            "avg_score": 5.5,
+        }
+
+    def test_judge_stats_empty_when_no_judge(self):
+        report = EvalReport(outcomes=[])
+        assert report.judge_stats() == {
+            "mode": "none",
+            "judged": 0,
+            "approved": 0,
+            "vetoed": 0,
+            "avg_score": None,
+        }
+
+    def test_outcome_exposes_judge_fields(self):
+        tasks = self._tasks()
+        llm = FakeLLMPort([fenced(MODULE_OK), fenced(MODULE_OK)])
+        verifier = FakeVerifier([make_verify_result(True), make_verify_result(True)])
+        judge = Judge(FakeLLMPort([self.JUDGE_FAIL, self.JUDGE_FAIL]))
+        loop = BslAgentLoop(llm, verifier, LoopConfig(max_iterations=1), judge=judge)
+
+        report = run_eval(tasks, loop)
+
+        outcome = report.outcomes[0]  # vetoed: no approving verdict stored
+        assert outcome.judge_approved is False
+        assert outcome.judge_score == 2
+        payload = report.to_dict()
+        assert payload["tasks"][0]["judge_approved"] is False
+        assert payload["tasks"][0]["judge_score"] == 2
+
+    def test_markdown_judge_section(self):
+        tasks = self._tasks()
+        llm = FakeLLMPort([fenced(MODULE_OK)] * 2)
+        verifier = FakeVerifier([make_verify_result(True)] * 2)
+        judge = Judge(FakeLLMPort([self.JUDGE_PASS] * 2))
+        loop = BslAgentLoop(llm, verifier, LoopConfig(), judge=judge)
+
+        report = run_eval(tasks, loop)
+
+        text = report.to_markdown()
+        assert "## Ревьюер (L2)" in text
+        assert "против эталонов (reference-aware)" in text
+        assert "1/2" in text or "2/2" in text
+        summary = "\n".join(report.summary_lines())
+        assert "judge reference" in summary
+
+    def test_markdown_no_judge_section_without_judge(self):
+        tasks = self._tasks()
+        llm = FakeLLMPort([fenced(MODULE_OK)] * 2)
+        verifier = FakeVerifier([make_verify_result(True)] * 2)
+        loop = BslAgentLoop(llm, verifier, LoopConfig())
+
+        report = run_eval(tasks, loop)
+
+        assert "## Ревьюер (L2)" not in report.to_markdown()
+        assert "judge" not in "\n".join(report.summary_lines())
+
+    def test_to_dict_carries_judge_block(self):
+        tasks = self._tasks()
+        llm = FakeLLMPort([fenced(MODULE_OK)] * 2)
+        verifier = FakeVerifier([make_verify_result(True)] * 2)
+        judge = Judge(FakeLLMPort([self.JUDGE_PASS] * 2))
+        loop = BslAgentLoop(llm, verifier, LoopConfig(), judge=judge)
+
+        report = run_eval(tasks, loop)
+
+        payload = report.to_dict()
+        assert payload["judge"]["mode"] == "reference"
+        assert payload["judge"]["judged"] == 2
+        assert payload["judge"]["approved"] == 2
+
+
 class TestReport:
     def _report(self) -> EvalReport:
         tasks = load_tasks(_write_tasks())

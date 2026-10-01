@@ -10,6 +10,13 @@ The judge is an advisory quality gate (L2) ON TOP of the verifier gate
     - <problem>
     REASONING: <one-two sentences>
 
+Reference-aware mode (v0.5): `review(..., reference=...)` additionally
+shows the task's gold solution and instructs the judge to compare the
+SEMANTICS (formulas, boundaries, edge cases) instead of guessing from
+the prompt alone. The reference is judge-only input: leaking it into
+generator prompts would invalidate the benchmark (the model would just
+copy the etalon).
+
 Design rules (documented, tested):
     - the judge NEVER sees secrets and never calls the verifier;
     - the parser is tolerant: RU section names and verdict words are
@@ -32,7 +39,11 @@ from typing import Optional, Sequence
 
 from russian_llm_pack import ChatMessage, CompletionResult
 
-from .prompt import JUDGE_SYSTEM_PROMPT, judge_review_prompt
+from .prompt import (
+    JUDGE_REFERENCE_SYSTEM_PROMPT,
+    JUDGE_SYSTEM_PROMPT,
+    judge_review_prompt,
+)
 
 # -- verdict classification --------------------------------------------------------
 
@@ -157,11 +168,23 @@ class Judge:
         task: str,
         code: str,
         diagnostics: Sequence[str] = (),
+        reference: str = "",
     ) -> JudgeVerdict:
-        """Ask the judge about one generated module; RLLError propagates."""
+        """Ask the judge about one generated module; RLLError propagates.
 
-        user = judge_review_prompt(task, code, diagnostics)
-        messages = [ChatMessage.system(JUDGE_SYSTEM_PROMPT), ChatMessage.user(user)]
+        With a non-empty `reference` the judge runs in the reference-aware
+        mode: it sees the gold solution and compares semantics (the stricter
+        L2 protocol of SWE-bench-BSL v0.4). The reference is a JUDGE-ONLY
+        input — callers must never leak it into generator prompts.
+        """
+
+        user = judge_review_prompt(task, code, diagnostics, reference=reference)
+        system = (
+            JUDGE_REFERENCE_SYSTEM_PROMPT
+            if reference.strip()
+            else JUDGE_SYSTEM_PROMPT
+        )
+        messages = [ChatMessage.system(system), ChatMessage.user(user)]
 
         kwargs: dict = {}
         if self._config.temperature is not None:

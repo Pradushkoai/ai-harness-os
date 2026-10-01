@@ -13,6 +13,7 @@ from harness_loop.judge import (
     parse_judge_response,
 )
 from harness_loop.prompt import (
+    JUDGE_REFERENCE_SYSTEM_PROMPT,
     JUDGE_SYSTEM_PROMPT,
     judge_fix_prompt,
     judge_review_prompt,
@@ -154,6 +155,51 @@ class TestJudgeReview:
         llm = FakeLLMPort([PASS_TEXT])
         Judge(llm).review("задача", MODULE_OK)
         assert llm.kwargs[0] == {}
+
+
+class TestReferenceAwareReview:
+    REFERENCE = "Функция Сумма(А, Б)\n    Возврат А + Б;\nКонецФункции"
+
+    def test_reference_switches_system_prompt(self):
+        llm = FakeLLMPort([PASS_TEXT])
+        judge = Judge(llm)
+        judge.review("задача", MODULE_OK, reference=self.REFERENCE)
+
+        system = llm.calls[0][0].content
+        assert system == JUDGE_REFERENCE_SYSTEM_PROMPT
+
+    def test_reference_reaches_user_prompt(self):
+        llm = FakeLLMPort([PASS_TEXT])
+        judge = Judge(llm)
+        judge.review("задача", MODULE_OK, reference=self.REFERENCE)
+
+        user = llm.calls[0][1].content
+        assert self.REFERENCE in user
+        assert "Эталонное решение" in user
+
+    def test_no_reference_keeps_plain_system_prompt(self):
+        llm = FakeLLMPort([PASS_TEXT])
+        judge = Judge(llm)
+        judge.review("задача", MODULE_OK)
+
+        system = llm.calls[0][0].content
+        assert system == JUDGE_SYSTEM_PROMPT
+        assert "Эталонное решение" not in llm.calls[0][1].content
+
+    def test_blank_reference_keeps_plain_system_prompt(self):
+        llm = FakeLLMPort([PASS_TEXT])
+        judge = Judge(llm)
+        judge.review("задача", MODULE_OK, reference=" \n")
+
+        assert llm.calls[0][0].content == JUDGE_SYSTEM_PROMPT
+
+    def test_reference_review_still_parses_verdict(self):
+        judge = Judge(FakeLLMPort([FAIL_TEXT]))
+        verdict = judge.review("задача", MODULE_OK, reference=self.REFERENCE)
+
+        assert verdict.approved is False
+        assert verdict.score == 3
+        assert verdict.issues
 
 
 class TestJudgeFeedback:

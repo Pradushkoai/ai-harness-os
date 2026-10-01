@@ -9,8 +9,10 @@ BslAgentLoop.run() with bookkeeping.
 Resolution semantics (SWE-bench-like, honest about what we can measure):
     resolved  = loop.passed  (verifier policy satisfied; judge approved
                               if a judge is configured)
-    reference solutions are REPORTED, never gated on: string equality of
-    code is meaningless, the reference exists for human/LLM diffing later.
+    reference solutions are judge-only input since v0.5 (the reference-aware
+    judge compares semantics against the etalon); they are NEVER shown to
+    the generator — string equality of code is meaningless, and leaking
+    the etalon into generation prompts would invalidate the benchmark.
 
 Task file format (YAML):
     version: 1
@@ -82,6 +84,26 @@ class TaskOutcome:
     def iterations(self) -> int:
         return len(self.result.iterations)
 
+    @property
+    def judge_approved(self) -> Optional[bool]:
+        """Last judge verdict: True/False when a judge ran, None otherwise."""
+
+        if self.result.judge is not None:
+            return self.result.judge.approved
+        for iteration in reversed(self.result.iterations):
+            if iteration.judge_verdict is not None:
+                return iteration.judge_verdict
+        return None
+
+    @property
+    def judge_score(self) -> Optional[int]:
+        """Score of the last judge verdict (None when the judge never ran
+        or answered without a parsable score)."""
+
+        if self.result.judge is not None:
+            return self.result.judge.score
+        return None
+
     def to_dict(self) -> dict:
         return {
             "id": self.task.id,
@@ -95,6 +117,8 @@ class TaskOutcome:
             "llm_latency_ms": round(self.result.total_llm_ms, 1),
             "verify_ms": round(self.result.total_verify_ms, 1),
             "judge_ms": round(self.result.total_judge_ms, 1),
+            "judge_approved": self.judge_approved,
+            "judge_score": self.judge_score,
             "reference": self.task.reference,
             "code": self.result.code,
         }
@@ -105,6 +129,7 @@ class EvalReport:
     """Aggregated outcomes + the standard report renderers."""
 
     outcomes: list = field(default_factory=list)  # list[TaskOutcome]
+    judge_mode: str = "none"  # none | plain | reference (set by run_eval)
 
     @property
     def total(self) -> int:
@@ -162,6 +187,24 @@ class EvalReport:
 
         return self._breakdown(lambda o: o.task.difficulty)
 
+    def judge_stats(self) -> dict:
+        """L2 aggregates: how often the judge approved + mean score.
+
+        judged counts outcomes where a judge verdict exists at all;
+        judge outage (judge_error) and judge-less runs are excluded.
+        """
+
+        judged = [o for o in self.outcomes if o.judge_approved is not None]
+        approved = sum(1 for o in judged if o.judge_approved)
+        scores = [o.judge_score for o in judged if o.judge_score is not None]
+        return {
+            "mode": self.judge_mode,
+            "judged": len(judged),
+            "approved": approved,
+            "vetoed": len(judged) - approved,
+            "avg_score": round(sum(scores) / len(scores), 2) if scores else None,
+        }
+
     def summary_lines(self) -> list[str]:
         rate = f"{self.pass_rate * 100.0:.0f}%"
         head = (
@@ -169,6 +212,15 @@ class EvalReport:
             f"iterations {self.total_iterations} | tokens "
             f"{self.total_prompt_tokens} in + {self.total_completion_tokens} out"
         )
+        stats = self.judge_stats()
+        if stats["judged"]:
+            score = (
+                f", avg score {stats['avg_score']}" if stats["avg_score"] is not None else ""
+            )
+            head += (
+                f" | judge {stats['mode']}: {stats['approved']}/{stats['judged']} "
+                f"approved{score}"
+            )
         lines = [head]
         by_difficulty = self.by_difficulty
         if by_difficulty:
@@ -198,6 +250,7 @@ class EvalReport:
             "total_prompt_tokens": self.total_prompt_tokens,
             "total_completion_tokens": self.total_completion_tokens,
             "failure_reasons": self.failure_reasons(),
+            "judge": self.judge_stats(),
             "by_category": self.by_category,
             "by_difficulty": self.by_difficulty,
             "tasks": [o.to_dict() for o in self.outcomes],
@@ -219,6 +272,26 @@ class EvalReport:
             _breakdown_table(lines, "По сложности", self.by_difficulty)
         if self.by_category:
             _breakdown_table(lines, "По категориям", self.by_category)
+        stats = self.judge_stats()
+        if stats["judged"]:
+            score = (
+                f"средний балл {stats['avg_score']}" if stats["avg_score"] is not None else ""
+            )
+            mode = {
+                "reference": "против эталонов (reference-aware)",
+                "plain": "без эталонов (plain)",
+                "none": "",
+            }.get(stats["mode"], stats["mode"])
+            lines.extend([
+                "",
+                "## Ревьюер (L2)",
+                "",
+                f"- Режим: {mode}",
+                f"- Вердикты: {stats['approved']}/{stats['judged']} одобрено, "
+                f"{stats['vetoed']} вето",
+            ])
+            if score:
+                lines.append(f"- Оценки: {score}")
         lines.extend([
             "",
             "| Статус | Задача | Сложность | Итерации | Причина |",
@@ -293,12 +366,20 @@ def run_eval(
     tasks: list[BslTask],
     loop: BslAgentLoop,
     on_task: Optional[TaskCallback] = None,
+    use_reference: bool = True,
 ) -> EvalReport:
-    """Run every task through one loop instance; failures are data, not errors."""
+    """Run every task through one loop instance; failures are data, not errors.
+
+    use_reference=True (default) feeds every task's gold solution to the
+    judge — the reference-aware L2 protocol. The reference never reaches
+    the generator (see BslAgentLoop.run). judge_mode in the report marks
+    what actually happened: none / plain / reference.
+    """
 
     outcomes: list[TaskOutcome] = []
     for task in tasks:
-        result = loop.run(task.prompt, context=task.context)
+        reference = task.reference if use_reference else ""
+        result = loop.run(task.prompt, context=task.context, reference=reference)
         outcome = TaskOutcome(task=task, result=result)
         outcomes.append(outcome)
         if on_task is not None:
@@ -306,4 +387,11 @@ def run_eval(
                 on_task(outcome)
             except Exception:  # noqa: BLE001 — progress hooks never break the eval
                 pass
-    return EvalReport(outcomes=outcomes)
+
+    if loop.judge is None:
+        judge_mode = "none"
+    elif use_reference and any(t.reference for t in tasks):
+        judge_mode = "reference"
+    else:
+        judge_mode = "plain"
+    return EvalReport(outcomes=outcomes, judge_mode=judge_mode)

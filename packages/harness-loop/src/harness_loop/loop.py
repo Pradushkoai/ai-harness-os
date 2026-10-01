@@ -40,7 +40,7 @@ from bsl_verify import BslVerifyError, BslVerifier, Severity, VerifyResult
 from russian_llm_pack import ChatMessage, RLLError, Router
 
 from .extract import extract_bsl_code
-from .judge import Judge, judge_feedback
+from .judge import Judge, JudgeVerdict, judge_feedback
 from .prompt import (
     SYSTEM_PROMPT,
     fix_prompt,
@@ -116,15 +116,24 @@ class BslAgentLoop:
         self,
         task: str,
         context: str = "",
+        reference: str = "",
         on_iteration: Optional[IterationCallback] = None,
     ) -> LoopResult:
-        """Run the loop for a natural-language task; never raises domain errors."""
+        """Run the loop for a natural-language task; never raises domain errors.
+
+        `reference` (gold solution) is forwarded to the judge ONLY — it must
+        never appear in task/fix/judge-fix prompts sent to the generator:
+        showing the etalon to the model would invalidate the eval (the model
+        would copy it instead of solving the task). This invariant is tested
+        in test_loop_judge.py.
+        """
 
         config = self._config
         iterations: list[IterationLog] = []
         code = ""
         diagnostics: list[str] = []
         feedback_from_judge = False  # next fix prompt shape (verifier vs judge)
+        last_judge: Optional[JudgeVerdict] = None  # survives vetoes for reports
 
         for index in range(1, config.max_iterations + 1):
             if index == 1:
@@ -204,7 +213,9 @@ class BslAgentLoop:
             if verdict.passed:
                 # L2: second opinion about verifier-approved code
                 try:
-                    jverdict = self._judge.review(task, code, diagnostics)
+                    jverdict = self._judge.review(
+                        task, code, diagnostics, reference=reference
+                    )
                 except RLLError as exc:
                     log.note = f"judge unavailable: {exc}"
                     iterations.append(log)
@@ -213,6 +224,7 @@ class BslAgentLoop:
                         passed=True,
                         code=code,
                         iterations=iterations,
+                        judge=last_judge,
                         judge_error=str(exc),
                     )
                 log.judge_verdict = jverdict.approved
@@ -224,6 +236,7 @@ class BslAgentLoop:
                     return LoopResult(
                         passed=True, code=code, iterations=iterations, judge=jverdict
                     )
+                last_judge = jverdict
                 # veto -> one more fix round against the review issues
                 diagnostics = judge_feedback(jverdict)
                 feedback_from_judge = True
@@ -237,6 +250,7 @@ class BslAgentLoop:
             code=code,
             iterations=iterations,
             failure_reason="judge_rejected" if feedback_from_judge else "budget_exhausted",
+            judge=last_judge,
         )
 
     # -- internals -----------------------------------------------------------

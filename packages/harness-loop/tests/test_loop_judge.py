@@ -94,7 +94,9 @@ class TestJudgeVeto:
 
         assert result.passed is False
         assert result.failure_reason == "judge_rejected"
-        assert result.judge is None  # last verdict was a veto, not stored as final
+        # v0.5: the LAST verdict survives vetoes so reports keep L2 data
+        assert result.judge is not None and result.judge.approved is False
+        assert result.judge.score == 2
         assert result.iterations[-1].judge_verdict is False
 
     def test_budget_exhausted_by_verifier_keeps_old_reason(self):
@@ -168,6 +170,76 @@ class TestJudgeOutage:
         assert payload["passed"] is True
         assert payload["judge_error"] == "no keys"
         assert payload["judge"] is None
+
+
+class TestReferenceAwareLoop:
+    """run(reference=...): the etalon reaches the judge and ONLY the judge."""
+
+    REFERENCE = (
+        "Функция Эталонная(А, Б)\n"
+        "    Возврат А + Б;\n"
+        "КонецФункции"
+    )
+    MARKER = "Эталонная"
+
+    def test_reference_reaches_judge_not_generator(self):
+        llm = FakeLLMPort([fenced(MODULE_OK)])
+        verifier = FakeVerifier([make_ok()])
+        judge_llm = FakeLLMPort([PASS])
+        judge = Judge(judge_llm)
+        loop = BslAgentLoop(llm, verifier, LoopConfig(), judge=judge)
+
+        result = loop.run("задача", reference=self.REFERENCE)
+
+        assert result.passed is True
+        # the judge saw the etalon...
+        judge_user = judge_llm.calls[0][1].content
+        assert self.REFERENCE in judge_user
+        judge_system = judge_llm.calls[0][0].content
+        assert "Эталон" in judge_system
+        # ...the generator did not (anti-cheating invariant)
+        for messages in llm.calls:
+            for message in messages:
+                assert self.MARKER not in message.content
+
+    def test_reference_absent_from_veto_fix_prompt(self):
+        """After a veto the judge-fix prompt still hides the etalon."""
+        llm = FakeLLMPort([fenced(MODULE_OK), fenced(MODULE_OK)])
+        verifier = FakeVerifier([make_ok(), make_ok()])
+        judge = Judge(FakeLLMPort([FAIL, PASS]))
+        loop = BslAgentLoop(llm, verifier, LoopConfig(max_iterations=3), judge=judge)
+
+        result = loop.run("задача", reference=self.REFERENCE)
+
+        assert result.passed is True
+        second_user = llm.calls[1][1].content
+        assert "ревьюер его отклонил" in second_user  # it IS a judge-fix round
+        assert self.MARKER not in second_user         # ...without the etalon
+
+    def test_no_reference_backward_compatible(self):
+        llm = FakeLLMPort([fenced(MODULE_OK)])
+        verifier = FakeVerifier([make_ok()])
+        judge_llm = FakeLLMPort([PASS])
+        judge = Judge(judge_llm)
+        loop = BslAgentLoop(llm, verifier, LoopConfig(), judge=judge)
+
+        result = loop.run("задача")
+
+        assert result.passed is True
+        assert "Эталонное решение" not in judge_llm.calls[0][1].content
+
+    def test_reference_without_judge_is_ignored(self):
+        """No judge configured: the reference is simply unused, no error."""
+        llm = FakeLLMPort([fenced(MODULE_OK)])
+        verifier = FakeVerifier([make_ok()])
+        loop = BslAgentLoop(llm, verifier, LoopConfig())
+
+        result = loop.run("задача", reference=self.REFERENCE)
+
+        assert result.passed is True
+        for messages in llm.calls:
+            for message in messages:
+                assert self.MARKER not in message.content
 
 
 class TestNoCodeAfterVeto:

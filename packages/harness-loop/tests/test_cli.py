@@ -288,6 +288,80 @@ class TestEval:
         assert code == 0
         assert "2/2 resolved" in out
 
+    def test_eval_judge_reference_mode_by_default(
+        self, patched_eval_factories, patched_judge, capsys
+    ):
+        """Default: the judge sees gold solutions (reference-aware L2)."""
+        patched_judge["judge_llm"].responses = [
+            "VERDICT: PASS\nSCORE: 8\nREASONING: ок"
+        ] * 10
+
+        code = cli.main(["eval", "--limit", "2", "--judge", "--json"])
+        payload = json.loads(capsys.readouterr().out)
+
+        assert code == 0
+        assert payload["judge"]["mode"] == "reference"
+        # the judge got the etalon of the first bundled task
+        judge_user = patched_judge["judge_llm"].calls[0][1].content
+        assert "Эталонное решение" in judge_user
+
+    def test_eval_no_judge_reference_flag(
+        self, patched_eval_factories, patched_judge, capsys
+    ):
+        """--no-judge-reference: plain judging as in v0.4 (A/B comparison)."""
+        patched_judge["judge_llm"].responses = [
+            "VERDICT: PASS\nSCORE: 8\nREASONING: ок"
+        ] * 10
+
+        code = cli.main([
+            "eval", "--limit", "2", "--judge",
+            "--no-judge-reference", "--json",
+        ])
+        payload = json.loads(capsys.readouterr().out)
+
+        assert code == 0
+        assert payload["judge"]["mode"] == "plain"
+        judge_user = patched_judge["judge_llm"].calls[0][1].content
+        assert "Эталонное решение" not in judge_user
+
+    def test_eval_judge_reference_never_leaks_to_generator(
+        self, patched_eval_factories, patched_judge, capsys
+    ):
+        """Anti-cheating at the CLI level: etalon never enters generator prompts."""
+        patched_judge["judge_llm"].responses = [
+            "VERDICT: PASS\nSCORE: 8\nREASONING: ок"
+        ] * 10
+
+        cli.main(["eval", "--limit", "2", "--judge"])
+
+        generator = patched_eval_factories["llm"]
+        for messages in generator.calls:
+            for message in messages:
+                assert "Эталонное решение" not in message.content
+
+    def test_eval_judge_stats_in_json_and_markdown(
+        self, patched_eval_factories, patched_judge, capsys, tmp_path
+    ):
+        patched_judge["judge_llm"].responses = [
+            "VERDICT: PASS\nSCORE: 8\nREASONING: ок"
+        ] * 10
+        report_md = tmp_path / "report.md"
+
+        code = cli.main([
+            "eval", "--limit", "2", "--judge",
+            "--markdown", str(report_md), "--json",
+        ])
+        payload = json.loads(capsys.readouterr().out)
+        markdown = report_md.read_text(encoding="utf-8")
+
+        assert code == 0
+        assert payload["judge"]["judged"] == 2
+        assert payload["judge"]["approved"] == 2
+        assert payload["judge"]["avg_score"] == 8.0
+        assert payload["tasks"][0]["judge_score"] == 8
+        assert "## Ревьюер (L2)" in markdown
+        assert "против эталонов" in markdown
+
     def test_eval_category_filter(self, patched_eval_factories, capsys):
         code = cli.main(["eval", "--category", "table", "--json"])
         payload = json.loads(capsys.readouterr().out)

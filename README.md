@@ -10,10 +10,10 @@
 |---|---|---|
 | [`russian-llm-pack`](packages/russian-llm-pack/) | Единый LLM-порт: DeepSeek / Z.ai / GigaChat (OAuth) / YandexGPT (нативный), YAML-роутинг задач, fallback-цепочки, CLI `rlp` | v0.2.0 — DeepSeek живой, нативные RU-адаптеры готовы |
 | [`bsl-verify`](packages/bsl-verify/) | Статическая проверка 1С/BSL через bsl-language-server: backpressure L0/L1, политика как код, CLI `bsl-check` / `bsl-doctor` | v0.1.1 — работает вживую (v1.0.7 LS) |
-| [`harness-loop`](packages/harness-loop/) | Цикл «генерация → верификация → (ревью) → исправление»: LLM пишет BSL-модуль, верификатор гейтит, judge (вторая модель) накладывает вето; телеметрия Langfuse; mini SWE-bench-BSL (54 задачи, 11 категорий, 13 hard; фильтры `--category`/`--difficulty`); CLI `harness-loop run/eval/doctor` | v0.4.0 — эталоны всех 54 задач проверены реальным LS |
+| [`harness-loop`](packages/harness-loop/) | Цикл «генерация → верификация → (ревью) → исправление»: LLM пишет BSL-модуль, верификатор гейтит, judge (вторая модель) накладывает вето — в eval судья сравнивает семантику с эталоном (reference-aware, генератор его не видит); телеметрия Langfuse; mini SWE-bench-BSL (54 задачи, 11 категорий, 13 hard; фильтры `--category`/`--difficulty`; L2-агрегаты в отчётах); CLI `harness-loop run/eval/doctor` | v0.5.0 — эталоны всех 54 задач проверены реальным LS |
 | [`agents-md`](packages/agents-md/) | Генератор AGENTS.md для AI-агентов: анализ проекта (1C-EDT / 1C-XML / python / js-ts / generic), RU-шаблоны, валидатор стандарта; CLI `agents-md init/validate` | v0.1.0 — чистый stdlib, dogfooded на этом репо |
 
-**Дальше по плану:** judge-промпты против reference-решений → live-прогон 54 задач у юзера (L2-цифры) → real-world пилот на 1 BSL-проекте → движок DeepAgents как optional backend на тех же портах (Phase 2 вердикта).
+**Дальше по плану:** live-прогон 54 задач у юзера с reference-aware judge (L1+L2-цифры) → рост набора под реальные 1С-проекты (НСтр, СКД, HTTP, табличные части) → real-world пилот на 1 BSL-проекте → движок DeepAgents как optional backend на тех же портах (Phase 2 вердикта).
 
 ## Принципы
 
@@ -61,6 +61,7 @@ harness-loop run "Напиши функцию СуммаДвухЧисел(А, �
 harness-loop run "Напиши функцию проверки ИНН" --judge --judge-chain judge
 harness-loop eval --markdown report.md   # mini SWE-bench-BSL: 54 задачи, отчёт
 harness-loop eval --difficulty hard      # только hard-подмножество (сравнение моделей)
+harness-loop eval --judge --no-judge-reference  # A/B: судья без эталонов
 
 # Генератор AGENTS.md (для любого проекта, чистый stdlib)
 pip install -e packages/agents-md

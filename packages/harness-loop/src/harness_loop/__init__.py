@@ -16,6 +16,12 @@ on_iteration seams (stdlib-only HTTP client) and the mini SWE-bench-BSL
 eval skeleton (task YAML + runner + report) — the strategic asset:
 nobody has published a BSL code-generation benchmark yet.
 
+v0.5: the judge became reference-aware — in eval runs it sees the task's
+gold solution and compares SEMANTICS (formulas, boundaries, edge cases)
+instead of guessing from the prompt; eval reports carry L2 aggregates
+(judge_mode, approved/vetoed, avg score). The etalon never reaches the
+generator: that would invalidate the benchmark.
+
 Deliberately framework-free: the loop is a thin orchestrator, fully
 unit-testable with fakes. A future DeepAgents/LangGraph engine would
 consume the same ports, so this code is the reference behaviour, not a
@@ -26,11 +32,16 @@ from .evals import BslTask, EvalReport, TaskOutcome, load_tasks, run_eval
 from .extract import extract_bsl_code
 from .judge import Judge, JudgeConfig, JudgeVerdict, parse_judge_response
 from .loop import BslAgentLoop, RouterPort
-from .prompt import SYSTEM_PROMPT, fix_prompt, task_prompt
+from .prompt import (
+    SYSTEM_PROMPT,
+    fix_prompt,
+    task_prompt,
+)
+from .prompt import JUDGE_REFERENCE_SYSTEM_PROMPT, JUDGE_SYSTEM_PROMPT
 from .telemetry import LangfuseTelemetry
 from .types import IterationLog, LoopConfig, LoopResult
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 
 __all__ = [
     "BslAgentLoop",
@@ -44,6 +55,8 @@ __all__ = [
     "SYSTEM_PROMPT",
     "TaskOutcome",
     "IterationLog",
+    "JUDGE_REFERENCE_SYSTEM_PROMPT",
+    "JUDGE_SYSTEM_PROMPT",
     "LoopConfig",
     "LoopResult",
     "extract_bsl_code",
