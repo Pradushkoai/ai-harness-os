@@ -50,6 +50,25 @@ def test_router_smoke_default_task():
     print(f"\n[smoke] router(coding) -> {result.provider}/{result.model}: {result.text!r}")
 
 
+def test_qwen_smoke():
+    """Qwen via DashScope compatible-mode: QWEN_API_KEY or DASHSCOPE_API_KEY."""
+    key = os.environ.get("QWEN_API_KEY") or os.environ.get("DASHSCOPE_API_KEY")
+    if not key:
+        pytest.skip("QWEN_API_KEY / DASHSCOPE_API_KEY not set")
+    adapter = build_provider("qwen")
+    assert adapter is not None, "provider did not build despite the key"
+
+    result = adapter.complete(
+        [ChatMessage.user("Ответь ровно одним словом: работает?")],
+        max_tokens=32,
+        temperature=0.0,
+    )
+    assert result.text.strip(), f"empty completion: {result!r}"
+    assert result.usage.total_tokens > 0
+    print(f"\n[smoke] qwen -> {result.text!r} "
+          f"({result.usage.total_tokens} tok, {result.latency_ms:.0f} ms)")
+
+
 def test_yandexgpt_native_smoke():
     """Native YandexGPT: needs YANDEXGPT_API_KEY (or IAM token) + folder id."""
     key = os.environ.get("YANDEXGPT_API_KEY") or os.environ.get("YANDEXGPT_IAM_TOKEN")

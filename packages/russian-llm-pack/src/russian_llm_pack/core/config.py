@@ -26,28 +26,34 @@ CONFIG_FILENAME = "rlp.config.yaml"
 
 # Builtin routing: task -> ordered fallback chain of "provider/model".
 # The judge chain intentionally differs from coding chains: an LLM judging
-# code should not be the same model that wrote it.
+# code should not be the same model that wrote it. Qwen leads it (independent
+# provider by default: deepseek codes, qwen judges); providers without keys
+# are simply skipped, so partial setups degrade gracefully.
 # Native RU providers (yandexgpt) close every chain: sanction-resilience —
 # a user with ONLY a YandexCloud account still gets a working setup.
 DEFAULT_TASKS: dict[str, list[str]] = {
     "coding": [
         "deepseek/deepseek-chat",
         "zai/glm-4.6",
+        "qwen/qwen-plus",
         "gigachat/GigaChat-Pro",
         "yandexgpt/yandexgpt",
     ],
     "reasoning": [
         "deepseek/deepseek-reasoner",
         "zai/glm-4.6",
+        "qwen/qwen-max",
         "yandexgpt/yandexgpt",
     ],
     "cheap": [
         "zai/glm-4.5-air",
         "deepseek/deepseek-chat",
+        "qwen/qwen-turbo",
         "gigachat/GigaChat-Lite",
         "yandexgpt/yandexgpt-lite",
     ],
     "judge": [
+        "qwen/qwen-max",
         "zai/glm-4.6",
         "deepseek/deepseek-chat",
         "yandexgpt/yandexgpt-pro",

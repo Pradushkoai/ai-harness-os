@@ -45,6 +45,10 @@ class ProviderPreset:
     experimental: bool = False
     native: bool = False  # native = dedicated adapter, not the generic engine
     notes: str = ""
+    # Accepted aliases of `api_key_env` (checked only when the env-var name
+    # is NOT overridden in config). E.g. DashScope's official DASHSCOPE_API_KEY
+    # for the qwen preset — so both spellings work out of the box.
+    alt_key_envs: tuple[str, ...] = ()
 
 
 PRESETS: dict[str, ProviderPreset] = {
@@ -64,6 +68,23 @@ PRESETS: dict[str, ProviderPreset] = {
         models=("glm-4.6", "glm-4.5-air", "glm-4.5-flash", "glm-5.2"),
         default_model="glm-4.6",
         notes="OpenAI-compatible; glm-5.2 targets long-context / long-horizon work",
+    ),
+    "qwen": ProviderPreset(
+        name="qwen",
+        # International (Model Studio) endpoint; mainland accounts use
+        # https://dashscope.aliyuncs.com/compatible-mode/v1 via config override:
+        #   providers: {qwen: {base_url: https://dashscope.aliyuncs.com/compatible-mode/v1}}
+        base_url="https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+        api_key_env="QWEN_API_KEY",
+        alt_key_envs=("DASHSCOPE_API_KEY",),  # official env name — accepted as alias
+        models=("qwen-max", "qwen-plus", "qwen-turbo"),
+        default_model="qwen-max",
+        notes=(
+            "OpenAI-compatible (DashScope compatible-mode); stable aliases "
+            "qwen-max/qwen-plus/qwen-turbo point to the latest snapshot; "
+            "key: QWEN_API_KEY or DASHSCOPE_API_KEY; mainland base_url override "
+            "in config"
+        ),
     ),
     "gigachat": ProviderPreset(
         name="gigachat",
@@ -108,12 +129,17 @@ def preset_info(name: str, overrides: Mapping | None = None) -> dict[str, Any]:
     api_key_env = overrides.get("api_key_env") or preset.api_key_env
     default_model = overrides.get("default_model") or preset.default_model
 
+    # Alt envs count only while the preset's own var name is in effect.
+    key_envs = [api_key_env]
+    if api_key_env == preset.api_key_env:
+        key_envs.extend(preset.alt_key_envs)
+
     if name in NATIVE_ADAPTERS and not overrides.get("api_key_env"):
         # Any of the adapter's credential envs counts as "has key" (e.g. an
         # IAM token for Yandex, a ready access token for GigaChat).
         has_key = any(os.environ.get(e) for e in NATIVE_ADAPTERS[name].credential_envs())
     else:
-        has_key = bool(os.environ.get(api_key_env))
+        has_key = any(os.environ.get(e) for e in key_envs)
     return {
         "name": name,
         "base_url": base_url,
@@ -179,6 +205,14 @@ def build_provider(
     api_key_env = overrides.get("api_key_env") or preset.api_key_env
     if api_key is None:
         api_key = os.environ.get(api_key_env, "")
+        if not api_key and api_key_env == preset.api_key_env and preset.alt_key_envs:
+            # Preset aliases (e.g. DASHSCOPE_API_KEY for qwen) — only when the
+            # env-var name was not overridden in config.
+            api_key = next(
+                (os.environ.get(e, "") for e in preset.alt_key_envs
+                 if os.environ.get(e, "")),
+                "",
+            )
     if not api_key:
         return None
 

@@ -2,9 +2,17 @@
 
 from __future__ import annotations
 
-import httpx
 import openai
 import pytest
+
+# openai>=3 depends on the httpx2 fork (import name `httpx2`); openai<3 brings
+# classic `httpx`. Both expose compatible Request/Response constructors, which
+# is all the fake APIError helper below needs.
+try:
+    import httpx2 as httpx
+except ImportError:  # pragma: no cover - openai<3 environments
+    import httpx
+
 from conftest import FakeClient
 
 from russian_llm_pack.providers.base import OpenAICompatibleAdapter
@@ -150,7 +158,7 @@ class TestErrorMapping:
 
 class TestRegistry:
     def test_presets_present(self):
-        assert set(PRESETS) == {"deepseek", "zai", "gigachat", "yandexgpt"}
+        assert set(PRESETS) == {"deepseek", "zai", "qwen", "gigachat", "yandexgpt"}
 
     def test_build_requires_key(self, monkeypatch):
         monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
@@ -212,3 +220,59 @@ class TestRegistry:
         info = preset_info("zai")
         assert info["has_key"] is True
         assert info["default_model"] == "glm-4.6"
+
+
+class TestQwenPreset:
+    """Qwen (DashScope compatible-mode): primary + alias env, base_url."""
+
+    def test_build_with_primary_env(self, monkeypatch):
+        monkeypatch.setenv("QWEN_API_KEY", "sk-qwen")
+        monkeypatch.delenv("DASHSCOPE_API_KEY", raising=False)
+        adapter = build_provider("qwen")
+        assert adapter is not None
+        assert adapter.base_url == "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+        assert adapter.default_model == "qwen-max"
+
+    def test_build_with_alias_env(self, monkeypatch):
+        """DASHSCOPE_API_KEY (the official env name) must work out of the box."""
+        monkeypatch.delenv("QWEN_API_KEY", raising=False)
+        monkeypatch.setenv("DASHSCOPE_API_KEY", "sk-dashscope")
+        adapter = build_provider("qwen")
+        assert adapter is not None
+        assert adapter.default_model == "qwen-max"
+
+    def test_primary_env_wins_over_alias(self, monkeypatch):
+        monkeypatch.setenv("QWEN_API_KEY", "primary")
+        monkeypatch.setenv("DASHSCOPE_API_KEY", "alias")
+        adapter = build_provider("qwen")
+        assert adapter is not None
+        # the key itself is not exposed; the build succeeding with both set is the contract
+
+    def test_not_built_without_any_key(self, monkeypatch):
+        monkeypatch.delenv("QWEN_API_KEY", raising=False)
+        monkeypatch.delenv("DASHSCOPE_API_KEY", raising=False)
+        assert build_provider("qwen") is None
+
+    def test_preset_info_reports_alias_as_key(self, monkeypatch):
+        monkeypatch.delenv("QWEN_API_KEY", raising=False)
+        monkeypatch.setenv("DASHSCOPE_API_KEY", "sk-dashscope")
+        info = preset_info("qwen")
+        assert info["has_key"] is True
+        assert info["api_key_env"] == "QWEN_API_KEY"
+        assert info["default_model"] == "qwen-max"
+        assert "qwen-plus" in info["models"]
+
+    def test_mainland_base_url_override(self, monkeypatch):
+        monkeypatch.setenv("QWEN_API_KEY", "sk-qwen")
+        adapter = build_provider(
+            "qwen", {"base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1"}
+        )
+        assert adapter is not None
+        assert adapter.base_url == "https://dashscope.aliyuncs.com/compatible-mode/v1"
+
+    def test_alias_disabled_when_env_name_overridden(self, monkeypatch):
+        """Config overrides api_key_env -> preset aliases must NOT be consulted."""
+        monkeypatch.delenv("QWEN_API_KEY", raising=False)
+        monkeypatch.setenv("DASHSCOPE_API_KEY", "sk-dashscope")
+        monkeypatch.setenv("MY_QWEN_KEY", "")
+        assert build_provider("qwen", {"api_key_env": "MY_QWEN_KEY"}) is None

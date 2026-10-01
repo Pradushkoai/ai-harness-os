@@ -2,6 +2,16 @@
 
 Формат — [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/). История отдельных пакетов — в их собственных CHANGELOG.
 
+## [0.9.0] — 2026-10-01
+
+### Added
+- **`russian-llm-pack` v0.3.0 — пресет Qwen (DashScope compatible-mode) + судейская независимость из коробки.** Ключ `QWEN_API_KEY` или официальный `DASHSCOPE_API_KEY` (новый механизм `alt_key_envs`, отключается при override `api_key_env`); intl-endpoint по умолчанию, mainland — override `base_url`; стабильные алиасы моделей `qwen-max`/`qwen-plus`/`qwen-turbo`. Judge-цепь теперь начинается с `qwen/qwen-max` — сетап «DeepSeek кодит, Qwen судит» работает без единой строчки конфига (контракт: первый провайдер judge-цепи ≠ первый провайдер coding-цепи, закреплён тестом). Qwen также в fallback coding/reasoning/cheap. Live smoke Qwen. 125 → 134 юнит-теста.
+- **`scripts/setup.sh` — установка и тестирование монорепо за один запуск** (Linux / macOS / WSL / Git Bash на Windows): клон (`--clone`, `--repo`) → Python 3.10+ → `.venv` → 4 пакета editable → юнит-тесты (без сети/java/ключей) → CLI-smoke (`rlp check`, `harness-loop doctor`) → опционально `--live` (живой smoke генератора и судьи) и `--with-jar` (скачать bsl-language-server 124 МБ в `~/.bsl-language-server/`). Подхватывает `./.env` (CRLF-безопасно), в финале печатает команду судейского прогона. Проверен живым прогоном в чистом окружении: 492 юнит-теста зелёные.
+
+### Fixed
+- **README пакета RLP советовал `pip install -e ".[dev]"` из корня монорепо** — команды не существовало (в корне нет `pyproject.toml`), установка падала; теперь venv-первый quickstart с путями `packages/*` и Windows-вариантами активации. Корневой README переписан так же (вариант «одним скриптом» + «вручную по шагам»).
+- **Тесты RLP падали в чистом venv с openai>=3** (SDK переехал на форк `httpx2`, а тесты импортировали `httpx` напрямую): толерантный импорт `httpx2 as httpx` с фолбэком — CI матрица со свежими зависимостями снова зелёная.
+
 ## [0.8.0] — 2026-10-01
 
 ### Added

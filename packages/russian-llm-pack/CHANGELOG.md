@@ -2,6 +2,29 @@
 
 Формат — [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/), версионирование — [SemVer](https://semver.org/lang/ru/).
 
+## [0.3.0] — 2026-10-01
+
+### Added
+- **Пресет `qwen`** (DashScope compatible-mode, generic OpenAI-движок): международный
+  endpoint `https://dashscope-intl.aliyuncs.com/compatible-mode/v1` по умолчанию,
+  mainland — override `base_url` в конфиге; стабильные алиасы моделей `qwen-max` /
+  `qwen-plus` / `qwen-turbo` (всегда свежие снапшоты); ключ читается из `QWEN_API_KEY`
+  **или** официального `DASHSCOPE_API_KEY` (механизм `alt_key_envs` — алиасы отключаются,
+  если конфиг переопределяет `api_key_env`).
+- **Judge-цепь теперь начинается с Qwen**: `judge: [qwen/qwen-max, zai/glm-4.6,
+  deepseek/deepseek-chat, yandexgpt/yandexgpt-pro]` — сетап «DeepSeek кодит, Qwen судит»
+  работает из коробки без конфига; контракт независимости судьи закреплён тестом
+  (первый провайдер judge-цепи ≠ первый провайдер coding-цепи). Qwen также добавлен в
+  fallback `coding` (`qwen-plus`) / `reasoning` (`qwen-max`) / `cheap` (`qwen-turbo`).
+- Live smoke для Qwen (`pytest -m live`, скипается без ключа).
+- `alt_key_envs` в `ProviderPreset` — обобщённый механизм алиасов env-переменных.
+- 9 новых юнит-тестов (итого 134), включая «каждый провайдер builtin-цепей имеет пресет».
+
+### Fixed
+- README: установка больше не советует `pip install -e .` в корне монорепо (там нет
+  `pyproject.toml` — команда падала); теперь venv-первый quickstart со путём
+  `packages/russian-llm-pack` и Windows-вариантами активации.
+
 ## [0.2.0] — 2026-10-01
 
 ### Added

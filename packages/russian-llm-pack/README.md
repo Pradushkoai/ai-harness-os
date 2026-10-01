@@ -1,32 +1,41 @@
 # Russian LLM Pack (RLP)
 
-Единый LLM-порт для «санкционно-устойчивых» провайдеров — **DeepSeek, Z.ai (GLM), GigaChat, YandexGPT** — с декларативной маршрутизацией задач по моделям и автоматическим fallback.
+Единый LLM-порт для «санкционно-устойчивых» провайдеров — **DeepSeek, Z.ai (GLM), Qwen, GigaChat, YandexGPT** — с декларативной маршрутизацией задач по моделям и автоматическим fallback.
 
 Часть проекта **ai-harness-os**: LLM-слой харнесса для 1С-разработки, вынесенный в чистый переиспользуемый модуль.
 
 ## Зачем это
 
 - **Один интерфейс — много провайдеров.** Харнесс знает только `LLMPort`. Смена модели = строчка в YAML, смена провайдера = адаптер на сотню строк.
-- **Fallback из коробки.** Упал DeepSeek → поехал Z.ai → GigaChat. Retry-политика как у Stripe: мало попыток, никаких бесконечных.
+- **Fallback из коробки.** Упал DeepSeek → поехал Z.ai → Qwen → GigaChat. Retry-политика как у Stripe: мало попыток, никаких бесконечных.
 - **Ключи только через env.** YAML не содержит секретов вообще. Коммит-хистори чистая по построению.
-- **Задачи вместо моделей.** `coding` / `reasoning` / `cheap` / `judge` — роутер сам выбирает цепочку. Судья ≠ модель, писавшая код.
+- **Задачи вместо моделей.** `coding` / `reasoning` / `cheap` / `judge` — роутер сам выбирает цепочку. Судья ≠ модель, писавшая код: по умолчанию кодит DeepSeek, судит Qwen.
 
 ## Установка
+
+Это пакет в монорепо — ставится из подпапки (⚠️ НЕ из корня репо: там нет `pyproject.toml`):
 
 ```bash
 git clone https://github.com/Pradushkoai/ai-harness-os
 cd ai-harness-os
-pip install -e ".[dev]"
+
+python -m venv .venv
+source .venv/bin/activate            # Windows Git Bash; PowerShell: .venv\Scripts\Activate.ps1
+
+pip install -e "packages/russian-llm-pack[dev]"
 ```
+
+Или всё монорепо одним скриптом (venv + 4 пакета + тесты): `bash scripts/setup.sh` из корня репо.
 
 Ключи — в переменных окружения (см. `.env.example`):
 
 ```bash
-export DEEPSEEK_API_KEY=sk-...
-export ZAI_API_KEY=...                    # опционально
-export YANDEXGPT_API_KEY=...              # опционально, нативный адаптер v0.2
-export YANDEXGPT_FOLDER_ID=b1g...         # обязателен для YandexGPT
-export GIGACHAT_AUTH_KEY=...              # опционально, OAuth сам получит токен
+export DEEPSEEK_API_KEY=sk-...        # генерация по умолчанию
+export QWEN_API_KEY=sk-...            # судья по умолчанию (алиас DASHSCOPE_API_KEY тоже работает)
+export ZAI_API_KEY=...                # опционально
+export YANDEXGPT_API_KEY=...          # опционально, нативный адаптер v0.2
+export YANDEXGPT_FOLDER_ID=b1g...     # обязателен для YandexGPT
+export GIGACHAT_AUTH_KEY=...          # опционально, OAuth сам получит токен
 ```
 
 ## Быстрый старт
@@ -80,6 +89,9 @@ RLP ищет конфиг так: `$RLP_CONFIG` → `./rlp.config.yaml` → buil
 providers:
   zai:
     base_url: https://api.z.ai/api/paas/v4   # override при необходимости
+  qwen:
+    base_url: https://dashscope-intl.aliyuncs.com/compatible-mode/v1
+    # mainland-аккаунт: https://dashscope.aliyuncs.com/compatible-mode/v1
   deepseek:
     api_key_env: DEEPSEEK_API_KEY            # имя env-переменной
   yandexgpt:
@@ -89,10 +101,10 @@ providers:
 
 routing:
   tasks:
-    coding:      [deepseek/deepseek-chat, zai/glm-4.6, gigachat/GigaChat-Pro, yandexgpt/yandexgpt]
-    reasoning:   [deepseek/deepseek-reasoner, zai/glm-4.6, yandexgpt/yandexgpt]
-    cheap:       [zai/glm-4.5-air, deepseek/deepseek-chat]
-    judge:       [zai/glm-4.6, deepseek/deepseek-chat]   # судья ≠ кодер
+    coding:      [deepseek/deepseek-chat, zai/glm-4.6, qwen/qwen-plus, gigachat/GigaChat-Pro, yandexgpt/yandexgpt]
+    reasoning:   [deepseek/deepseek-reasoner, zai/glm-4.6, qwen/qwen-max, yandexgpt/yandexgpt]
+    cheap:       [zai/glm-4.5-air, deepseek/deepseek-chat, qwen/qwen-turbo]
+    judge:       [qwen/qwen-max, zai/glm-4.6, deepseek/deepseek-chat]   # судья ≠ кодер
   params:
     coding:    {temperature: 0.2}
     judge:     {temperature: 0.0}
@@ -105,7 +117,7 @@ defaults:
 
 Полный пример — `config.example.yaml`.
 
-**Провайдер без ключа не ломает систему** — роутер просто пропускает его в цепочке. Только DeepSeek ключ? Всё работает. Появился Z.ai — добавился в fallback без единой правки кода.
+**Провайдер без ключа не ломает систему** — роутер просто пропускает его в цепочке. Только DeepSeek ключ? Всё работает. Появился Qwen — добавился в fallback без единой правки кода.
 
 ## Провайдеры
 
@@ -113,6 +125,7 @@ defaults:
 |---|---|---|
 | `deepseek` | ✅ работает | OpenAI-compatible; `deepseek-reasoner` — chain-of-thought |
 | `zai` | ✅ работает | GLM; международный endpoint, есть mainland-альтернатива |
+| `qwen` | ✅ адаптер v0.3 | DashScope compatible-mode (OpenAI-compatible); стабильные алиасы `qwen-max`/`qwen-plus`/`qwen-turbo` указывают на свежие снапшоты; ключ `QWEN_API_KEY` или `DASHSCOPE_API_KEY`;intl-endpoint по умолчанию, mainland — override `base_url` |
 | `yandexgpt` | ✅ адаптер v0.2 | нативный протокол: Api-Key/IAM + `YANDEXGPT_FOLDER_ID`, `modelUri = gpt://<folder>/<model>`; модель с `://` в имени проходит как есть (`ds://…` файнтюны) |
 | `gigachat` | ⚠️ адаптер v0.2, live-проверки ждут ключа | OAuth Basic `GIGACHAT_AUTH_KEY` → токен с авто-refresh (~30 мин); TLS российского CA — при ошибке хендшейка см. `GIGACHAT_CA_BUNDLE` / `GIGACHAT_ALLOW_INSECURE` |
 
@@ -136,7 +149,7 @@ defaults:
         │ OpenAI-compat│  │ native adapters     │
         │  deepseek    │  │  yandexgpt (v0.2)   │
         │  zai         │  │  gigachat oauth(0.2)│
-        │  gigachat*   │  └────────────────────┘
+        │  qwen (v0.3) │  └────────────────────┘
         └──────────────┘
 ```
 
@@ -148,6 +161,7 @@ Hexagonal: `ports/` (стабильный интерфейс) ← `providers/` (
 pip install -e ".[dev]"
 pytest -q                      # юнит-тесты, без сети и ключей
 DEEPSEEK_API_KEY=... pytest -m live -v                        # живой smoke DeepSeek
+QWEN_API_KEY=... pytest -m live -v                            # + живой smoke Qwen
 YANDEXGPT_API_KEY=... YANDEXGPT_FOLDER_ID=... pytest -m live -v   # + нативный YandexGPT
 GIGACHAT_AUTH_KEY=... pytest -m live -v                       # + нативный GigaChat
 ```
@@ -156,7 +170,8 @@ GIGACHAT_AUTH_KEY=... pytest -m live -v                       # + нативны
 
 - **v0.1** — порт, generic-адаптер, DeepSeek + Z.ai, роутер с fallback, CLI ✅
 - **v0.2** — нативный YandexGPT-адаптер (Api-Key/IAM + folder), GigaChat OAuth-flow с авто-refresh, stdlib-транспорт для нативных адаптеров, yandexgpt-fallback во всех цепях ✅
-- **v0.3** — async-порт (`acomplete`/`astream`), embeddings (`embed()`), cost-таблица в usage, Langfuse-хук из коробки, upstream PR'ы в LiteLLM
+- **v0.3** — пресет Qwen (DashScope compatible-mode, алиас DASHSCOPE_API_KEY, intl/mainland base_url), qwen ведёт judge-цепь: кодит DeepSeek, судит Qwen ✅
+- **v0.4** — async-порт (`acomplete`/`astream`), embeddings (`embed()`), cost-таблица в usage, Langfuse-хук из коробки, upstream PR'ы в LiteLLM
 
 ## Лицензия
 

@@ -124,3 +124,23 @@ class TestChainFor:
     def test_none_task_uses_default(self):
         refs = RouterConfig.builtin().chain_for(None)
         assert [str(r) for r in refs] == RouterConfig().tasks["coding"]
+
+    def test_judge_chain_is_independent_of_coding(self):
+        """Contract: the judge must not default to the coding provider —
+        an LLM reviewing code should be a different model than the one that
+        wrote it. Qwen leads the judge chain, deepseek leads coding."""
+        judge = [str(r) for r in RouterConfig.builtin().chain_for("judge")]
+        coding = [str(r) for r in RouterConfig.builtin().chain_for("coding")]
+        assert judge[0] == "qwen/qwen-max"
+        assert coding[0] == "deepseek/deepseek-chat"
+        assert judge[0].split("/")[0] != coding[0].split("/")[0]
+
+    def test_every_builtin_chain_model_has_a_preset(self):
+        """Every 'provider/model' in DEFAULT_TASKS must resolve to a known
+        preset — otherwise Router.from_config would silently skip it."""
+        from russian_llm_pack.providers.registry import PRESETS
+
+        for task, chain in RouterConfig.builtin().tasks.items():
+            for ref in chain:
+                provider = ref.split("/")[0]
+                assert provider in PRESETS, f"{task}: unknown provider {provider!r}"

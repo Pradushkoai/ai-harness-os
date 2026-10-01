@@ -8,12 +8,12 @@
 
 | Пакет | Что это | Статус |
 |---|---|---|
-| [`russian-llm-pack`](packages/russian-llm-pack/) | Единый LLM-порт: DeepSeek / Z.ai / GigaChat (OAuth) / YandexGPT (нативный), YAML-роутинг задач, fallback-цепочки, CLI `rlp` | v0.2.0 — DeepSeek живой, нативные RU-адаптеры готовы |
+| [`russian-llm-pack`](packages/russian-llm-pack/) | Единый LLM-порт: DeepSeek / Z.ai / Qwen / GigaChat (OAuth) / YandexGPT (нативный), YAML-роутинг задач, fallback-цепочки, CLI `rlp` | v0.3.0 — DeepSeek живой, Qwen ведёт judge-цепь |
 | [`bsl-verify`](packages/bsl-verify/) | Статическая проверка 1С/BSL через bsl-language-server: backpressure L0/L1, политика как код, CLI `bsl-check` / `bsl-doctor` | v0.1.1 — работает вживую (v1.0.7 LS) |
 | [`harness-loop`](packages/harness-loop/) | Цикл «генерация → верификация → (ревью) → исправление»: LLM пишет BSL-модуль, верификатор гейтит, judge (вторая модель) накладывает вето — в eval судья сравнивает семантику с эталоном (reference-aware, генератор его не видит); телеметрия Langfuse; mini SWE-bench-BSL (54 задачи, 11 категорий, 13 hard; фильтры `--category`/`--difficulty`; L2-агрегаты в отчётах); CLI `harness-loop run/eval/doctor` | v0.5.0 — эталоны всех 54 задач проверены реальным LS |
 | [`agents-md`](packages/agents-md/) | Генератор AGENTS.md для AI-агентов: анализ проекта (1C-EDT / 1C-XML / python / js-ts / generic), RU-шаблоны, валидатор стандарта; CLI `agents-md init/validate` | v0.1.0 — чистый stdlib, dogfooded на этом репо |
 
-**Дальше по плану:** live-прогон 54 задач у юзера с reference-aware judge (L1+L2-цифры) → рост набора под реальные 1С-проекты (НСтр, СКД, HTTP, табличные части) → real-world пилот на 1 BSL-проекте → движок DeepAgents как optional backend на тех же портах (Phase 2 вердикта).
+**Дальше по плану:** live-прогон 54 задач с независимым судьёй (DeepSeek кодит, Qwen судит — L1+L2-цифры) → рост набора под реальные 1С-проекты (НСтр, СКД, HTTP, табличные части) → real-world пилот на 1 BSL-проекте → движок DeepAgents как optional backend на тех же портах (Phase 2 вердикта).
 
 ## Принципы
 
@@ -32,6 +32,8 @@ ai-harness-os/
 │   ├── bsl-verify/           # BSL-верификация (L0/L1 сенсор, bsl-check CLI)
 │   ├── harness-loop/         # agent loop (генерация→верификация→фикс, harness-loop CLI)
 │   └── agents-md/            # генератор AGENTS.md (анализ + шаблоны + валидатор)
+├── scripts/
+│   └── setup.sh              # установка+тестирование за один запуск (Git Bash/WSL/Linux)
 ├── .github/workflows/ci.yml  # матрица: пакет × python 3.10–3.13
 ├── AGENTS.md                 # правила для AI-агентов, работающих с репо
 ├── CHANGELOG.md              # новости репозитория
@@ -40,48 +42,80 @@ ai-harness-os/
 
 ## Быстрый старт
 
+### Вариант 1 — одним скриптом (Linux / macOS / WSL / Git Bash на Windows)
+
+```bash
+bash scripts/setup.sh --clone
+# если репо уже склонирован (из корня):  bash scripts/setup.sh
+# полезные флаги: --live (живой LLM-smoke, ~1 цент), --with-jar (качать
+# bsl-language-server 124 МБ), --skip-tests
+```
+
+Скрипт сам: клонирует → найдёт Python 3.10+ → создаст `.venv` → поставит все 4
+пакета → прогонит юнит-тесты (без сети/java/ключей) → проверит CLI (`rlp check`,
+`harness-loop doctor`). В конце подскажет команду судейского прогона.
+
+### Вариант 2 — вручную (то же самое по шагам)
+
 ```bash
 git clone https://github.com/Pradushkoai/ai-harness-os
 cd ai-harness-os
 
-# LLM-слой
-pip install -e packages/russian-llm-pack
-export DEEPSEEK_API_KEY=sk-...
-rlp check && rlp chat "привет"
+# 1) venv — ОБЯЗАТЕЛЬНО (в корне репо нет pyproject.toml, пакеты ставятся
+#    из подпапок packages/*; без venv на Windows pip обычно ломается)
+python -m venv .venv
+source .venv/bin/activate    # Git Bash/WSL; PowerShell: .venv\Scripts\Activate.ps1
 
-# BSL-верификация (нужны java 17+ и bsl-language-server.jar)
-pip install -e packages/bsl-verify
-bsl-doctor                 # что не хватает и как починить
-bsl-check src/             # проверка с диагностиками и exit-кодами
-
-# Agent loop: генерация → верификация → исправление (+ judge, + бенчмарк)
-pip install -e "packages/harness-loop[dev]"
-harness-loop doctor        # оба слоя: ключи + java/jar
-harness-loop run "Напиши функцию СуммаДвухЧисел(А, Б)" --save module.bsl
-harness-loop run "Напиши функцию проверки ИНН" --judge --judge-chain judge
-harness-loop eval --markdown report.md   # mini SWE-bench-BSL: 54 задачи, отчёт
-harness-loop eval --difficulty hard      # только hard-подмножество (сравнение моделей)
-harness-loop eval --judge --no-judge-reference  # A/B: судья без эталонов
-
-# Генератор AGENTS.md (для любого проекта, чистый stdlib)
-pip install -e packages/agents-md
-agents-md init ~/projects/my-1c-config   # анализ → черновик AGENTS.md
-agents-md validate ~/projects/my-1c-config
-```
-
-## Разработка
-
-```bash
+# 2) все 4 пакета (editable + dev-зависимости)
 pip install -e "packages/russian-llm-pack[dev]"
 pip install -e "packages/bsl-verify[dev]"
 pip install -e "packages/harness-loop[dev]"
 pip install -e "packages/agents-md[dev]"
+
+# 3) ключи — только через env (никогда в файлах репо)
+export DEEPSEEK_API_KEY=sk-...    # генератор по умолчанию
+export QWEN_API_KEY=sk-...        # судья по умолчанию (алиас DASHSCOPE_API_KEY)
+# PowerShell: $env:DEEPSEEK_API_KEY="sk-..."; $env:QWEN_API_KEY="sk-..."
+
+# 4) LLM-слой: что видно, какие цепочки
+rlp check
+rlp chat "привет" --max-tokens 32
+
+# 5) BSL-верификация: нужны java 17+ и jar
+#    jar: скачать bsl-language-server-*-exec.jar (releases 1c-syntax)
+#    и положить в ~/.bsl-language-server/bsl-language-server.jar
+#    (или переменная BSL_LS_JAR) — см. `bash scripts/setup.sh --with-jar`
+bsl-doctor
+bsl-check src/
+
+# 6) Agent loop: генерация → верификация → исправление (+ судья, + бенчмарк)
+harness-loop doctor
+harness-loop run "Напиши функцию СуммаДвухЧисел(А, Б)" --save module.bsl
+harness-loop run "Напиши функцию проверки ИНН" --judge   # судья: qwen/qwen-max
+harness-loop eval --judge --save-report report.json --markdown report.md --verbose
+harness-loop eval --difficulty hard      # срез для сравнения моделей
+harness-loop eval --judge --no-judge-reference   # A/B: судья без эталонов
+
+# 7) Генератор AGENTS.md (для любого проекта, чистый stdlib)
+agents-md init ~/projects/my-1c-config
+agents-md validate ~/projects/my-1c-config
+```
+
+Схема по умолчанию с RLP v0.3: **DeepSeek кодит — Qwen судит** (судья ≠ модель-генератор,
+judge-цепь: `qwen/qwen-max → zai → deepseek → yandexgpt`; провайдеры без ключей просто
+пропускаются). Китайский Qwen-аккаунт: `providers: {qwen: {base_url: https://dashscope.aliyuncs.com/compatible-mode/v1}}` в `rlp.config.yaml`.
+
+## Разработка
+
+```bash
+bash scripts/setup.sh                 # или всё руками, как выше
 cd packages/russian-llm-pack && pytest -q          # без сети
 cd packages/bsl-verify && pytest -q                # без java
 cd packages/harness-loop && pytest -q              # без сети/java/токенов
 cd packages/agents-md && pytest -q                 # tmp-проекты, ничего внешнего
 BSL_LS_JAR=... pytest -m integration -v            # живой bsl LS (bsl-verify, harness-loop)
 DEEPSEEK_API_KEY=... pytest -m live -v             # живой LLM (russian-llm-pack, harness-loop)
+QWEN_API_KEY=... pytest -m live -v                 # + живой smoke Qwen
 ```
 
 ## Лицензия

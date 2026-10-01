@@ -7,6 +7,12 @@ providers:
     api_key_env: DEEPSEEK_API_KEY          # default, можно не указывать
     # base_url: https://api.deepseek.com   # override при необходимости
 
+  qwen:
+    api_key_env: QWEN_API_KEY               # алиас DASHSCOPE_API_KEY тоже работает
+    # base_url: https://dashscope-intl.aliyuncs.com/compatible-mode/v1  # intl (default)
+    # base_url: https://dashscope.aliyuncs.com/compatible-mode/v1       # mainland-аккаунт
+    # default_model: qwen-max               # стабильный алиас свежего снапшота
+
   zai:
     api_key_env: ZAI_API_KEY
     # base_url: https://api.z.ai/api/paas/v4          # международный
@@ -30,11 +36,12 @@ providers:
 routing:
   tasks:
     # цепочка = порядок fallback; провайдеры без ключей пропускаются
+    # qwen ведёт judge-цепь: кодит DeepSeek, судит Qwen (судья ≠ кодер)
     # yandexgpt замыкает каждую цепь: только Яндекс-аккаунт — уже рабочий setup
-    coding:      [deepseek/deepseek-chat, zai/glm-4.6, gigachat/GigaChat-Pro, yandexgpt/yandexgpt]
-    reasoning:   [deepseek/deepseek-reasoner, zai/glm-4.6, yandexgpt/yandexgpt]
-    cheap:       [zai/glm-4.5-air, deepseek/deepseek-chat, gigachat/GigaChat-Lite, yandexgpt/yandexgpt-lite]
-    judge:       [zai/glm-4.6, deepseek/deepseek-chat, yandexgpt/yandexgpt-pro]   # судья ≠ модель-кодер
+    coding:      [deepseek/deepseek-chat, zai/glm-4.6, qwen/qwen-plus, gigachat/GigaChat-Pro, yandexgpt/yandexgpt]
+    reasoning:   [deepseek/deepseek-reasoner, zai/glm-4.6, qwen/qwen-max, yandexgpt/yandexgpt]
+    cheap:       [zai/glm-4.5-air, deepseek/deepseek-chat, qwen/qwen-turbo, gigachat/GigaChat-Lite, yandexgpt/yandexgpt-lite]
+    judge:       [qwen/qwen-max, zai/glm-4.6, deepseek/deepseek-chat, yandexgpt/yandexgpt-pro]   # судья ≠ модель-кодер
 
   params:
     coding:    {temperature: 0.2}
