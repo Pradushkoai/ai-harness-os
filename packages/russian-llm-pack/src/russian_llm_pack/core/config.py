@@ -27,24 +27,30 @@ CONFIG_FILENAME = "rlp.config.yaml"
 # Builtin routing: task -> ordered fallback chain of "provider/model".
 # The judge chain intentionally differs from coding chains: an LLM judging
 # code should not be the same model that wrote it.
+# Native RU providers (yandexgpt) close every chain: sanction-resilience —
+# a user with ONLY a YandexCloud account still gets a working setup.
 DEFAULT_TASKS: dict[str, list[str]] = {
     "coding": [
         "deepseek/deepseek-chat",
         "zai/glm-4.6",
         "gigachat/GigaChat-Pro",
+        "yandexgpt/yandexgpt",
     ],
     "reasoning": [
         "deepseek/deepseek-reasoner",
         "zai/glm-4.6",
+        "yandexgpt/yandexgpt",
     ],
     "cheap": [
         "zai/glm-4.5-air",
         "deepseek/deepseek-chat",
         "gigachat/GigaChat-Lite",
+        "yandexgpt/yandexgpt-lite",
     ],
     "judge": [
         "zai/glm-4.6",
         "deepseek/deepseek-chat",
+        "yandexgpt/yandexgpt-pro",
     ],
 }
 

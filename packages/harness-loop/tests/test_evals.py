@@ -8,9 +8,7 @@ from pathlib import Path
 import pytest
 
 from harness_loop.evals import (
-    BslTask,
     EvalReport,
-    TaskOutcome,
     bundled_tasks_path,
     load_tasks,
     run_eval,
@@ -46,10 +44,11 @@ tasks:
 class TestLoadTasks:
     def test_bundled_set_loads(self):
         tasks = load_tasks(bundled_tasks_path())
-        assert len(tasks) == 10
+        assert len(tasks) == 30  # v0.2: 10 -> 30
         ids = [t.id for t in tasks]
-        assert len(set(ids)) == 10  # all unique
+        assert len(set(ids)) == 30  # all unique
         assert "func-sum-two-numbers" in ids
+        assert "query-doc-period" in ids
         assert all(t.prompt for t in tasks)
         assert all(t.reference.strip() for t in tasks)
 
@@ -58,6 +57,18 @@ class TestLoadTasks:
         assert tasks["func-sum-two-numbers"].difficulty == "easy"
         assert tasks["proc-safe-division"].category == "errors"
         assert tasks["func-array-sum"].difficulty == "medium"
+
+    def test_bundled_v02_new_categories(self):
+        """v0.2 growth: dates / collections / query + hard tasks exist."""
+        tasks = load_tasks(bundled_tasks_path())
+        categories = {t.category for t in tasks}
+        assert {"dates", "collections", "query"} <= categories
+        difficulties = [t.difficulty for t in tasks]
+        assert difficulties.count("hard") >= 4
+
+    def test_bundled_difficulty_values_valid(self):
+        tasks = load_tasks(bundled_tasks_path())
+        assert all(t.difficulty in {"easy", "medium", "hard"} for t in tasks)
 
     def test_yaml_roundtrip_fields(self, tmp_path):
         source = tmp_path / "tasks.yaml"

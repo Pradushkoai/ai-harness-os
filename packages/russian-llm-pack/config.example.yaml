@@ -14,20 +14,27 @@ providers:
     # default_model: glm-4.6
 
   gigachat:
-    api_key_env: GIGACHAT_ACCESS_TOKEN     # experimental: токен из OAuth
+    api_key_env: GIGACHAT_AUTH_KEY          # OAuth Basic key (v0.2, адаптер сам получает токен)
+    # api_key_env: GIGACHAT_ACCESS_TOKEN     # альтернатива: готовый токен (без refresh)
+    # scope_env: GIGACHAT_SCOPE              # default GIGACHAT_API_PERS
+    # oauth_url: https://ngw.devices.sberbank.ru:9443/api/v2/oauth
     # default_model: GigaChat-Pro
+    # TLS: GIGACHAT_CA_BUNDLE=/path/ca.pem или GIGACHAT_ALLOW_INSECURE=1
 
   yandexgpt:
-    api_key_env: YAIAM_TOKEN               # native-адаптер планируется в v0.2
+    api_key_env: YANDEXGPT_API_KEY           # Api-Key (предпочтительно)
+    # iam_token_env: YANDEXGPT_IAM_TOKEN     # Bearer IAM-токен (~12ч, без refresh)
+    # folder_id_env: YANDEXGPT_FOLDER_ID     # ОБЯЗАТЕЛЕН: modelUri = gpt://<folder>/<model>
     # base_url: https://llm.api.cloud.yandex.net/foundationModels/v1
 
 routing:
   tasks:
     # цепочка = порядок fallback; провайдеры без ключей пропускаются
-    coding:      [deepseek/deepseek-chat, zai/glm-4.6, gigachat/GigaChat-Pro]
-    reasoning:   [deepseek/deepseek-reasoner, zai/glm-4.6]
-    cheap:       [zai/glm-4.5-air, deepseek/deepseek-chat, gigachat/GigaChat-Lite]
-    judge:       [zai/glm-4.6, deepseek/deepseek-chat]   # судья ≠ модель-кодер
+    # yandexgpt замыкает каждую цепь: только Яндекс-аккаунт — уже рабочий setup
+    coding:      [deepseek/deepseek-chat, zai/glm-4.6, gigachat/GigaChat-Pro, yandexgpt/yandexgpt]
+    reasoning:   [deepseek/deepseek-reasoner, zai/glm-4.6, yandexgpt/yandexgpt]
+    cheap:       [zai/glm-4.5-air, deepseek/deepseek-chat, gigachat/GigaChat-Lite, yandexgpt/yandexgpt-lite]
+    judge:       [zai/glm-4.6, deepseek/deepseek-chat, yandexgpt/yandexgpt-pro]   # судья ≠ модель-кодер
 
   params:
     coding:    {temperature: 0.2}

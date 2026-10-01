@@ -5,6 +5,7 @@ from __future__ import annotations
 import httpx
 import openai
 import pytest
+from conftest import FakeClient
 
 from russian_llm_pack.providers.base import OpenAICompatibleAdapter
 from russian_llm_pack.providers.registry import PRESETS, build_provider, preset_info
@@ -14,7 +15,6 @@ from russian_llm_pack.types import (
     ProviderRequestError,
     ProviderTransientError,
 )
-from conftest import FakeClient
 
 
 def make_adapter(client, name="deepseek", default_model="deepseek-chat"):
@@ -166,9 +166,29 @@ class TestRegistry:
     def test_build_unknown_provider(self):
         assert build_provider("ghost") is None
 
-    def test_native_provider_not_built_yet(self, monkeypatch):
-        monkeypatch.setenv("YAIAM_TOKEN", "fake")
-        assert build_provider("yandexgpt") is None  # native -> v0.2
+    def test_yandexgpt_native_builds_with_key_and_folder(self, monkeypatch):
+        monkeypatch.setenv("YANDEXGPT_API_KEY", "fake-key")
+        monkeypatch.setenv("YANDEXGPT_FOLDER_ID", "b1gfake")
+        adapter = build_provider("yandexgpt")
+        assert adapter is not None
+        assert adapter.base_url.startswith("https://llm.api.cloud.yandex.")
+
+    def test_yandexgpt_not_built_without_folder(self, monkeypatch):
+        monkeypatch.setenv("YANDEXGPT_API_KEY", "fake-key")
+        monkeypatch.delenv("YANDEXGPT_FOLDER_ID", raising=False)
+        assert build_provider("yandexgpt") is None
+
+    def test_yandexgpt_iam_token_also_counts(self, monkeypatch):
+        monkeypatch.setenv("YANDEXGPT_IAM_TOKEN", "fake-iam")
+        monkeypatch.setenv("YANDEXGPT_FOLDER_ID", "b1gfake")
+        adapter = build_provider("yandexgpt")
+        assert adapter is not None
+
+    def test_gigachat_builds_with_auth_key(self, monkeypatch):
+        monkeypatch.setenv("GIGACHAT_AUTH_KEY", "fake-basic")
+        adapter = build_provider("gigachat")
+        assert adapter is not None
+        assert adapter.base_url.startswith("https://gigachat.")
 
     def test_gigachat_builds_with_token(self, monkeypatch):
         monkeypatch.setenv("GIGACHAT_ACCESS_TOKEN", "fake-token")

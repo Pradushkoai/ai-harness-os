@@ -85,3 +85,54 @@ class TestRealBackpressureLoop:
 
         assert result.passed is True
         assert result.iterations[0].verify_ms > 0  # real java run measured
+
+
+class TestBenchmarkReferences:
+    """Every reference solution must be clean under the REAL bsl LS.
+
+    The benchmark's credibility rests on gold solutions that verify with
+    zero Error diagnostics — otherwise a model generating the reference
+    verbatim would still fail the eval. Default policy: max_errors=0.
+    One JVM run for the whole set: all references staged into a single
+    directory, one `verify_dir` call (~20s instead of ~7s per file).
+    """
+
+    def test_all_reference_solutions_pass_real_verifier(
+        self, real_verifier, tmp_path
+    ):
+        from harness_loop.evals import bundled_tasks_path, load_tasks
+
+        tasks = load_tasks(bundled_tasks_path())
+        staging = tmp_path / "references"
+        staging.mkdir()
+        for task in tasks:
+            (staging / f"{task.id}.bsl").write_text(
+                task.reference, encoding="utf-8"
+            )
+
+        result = real_verifier.verify_dir(str(staging))
+
+        by_name = {}
+        for report in result.files:
+            name = str(report.path).replace("\\", "/").rsplit("/", 1)[-1]
+            by_name[name] = report
+
+        failures = []
+        for task in tasks:
+            report = by_name.get(f"{task.id}.bsl")
+            if report is None:
+                failures.append(f"{task.id}: missing from the verifier report")
+                continue
+            error_messages = [
+                str(d.message)
+                for d in report.diagnostics
+                if str(d.severity).endswith("Error")
+            ]
+            if error_messages:
+                failures.append(f"{task.id}: {error_messages[:2]}")
+        assert not failures, "reference solutions with errors:\n" + "\n".join(failures)
+
+    def test_bundled_reference_count(self):
+        from harness_loop.evals import bundled_tasks_path, load_tasks
+
+        assert len(load_tasks(bundled_tasks_path())) == 30

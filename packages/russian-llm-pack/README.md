@@ -23,8 +23,10 @@ pip install -e ".[dev]"
 
 ```bash
 export DEEPSEEK_API_KEY=sk-...
-export ZAI_API_KEY=...          # опционально
-export GIGACHAT_ACCESS_TOKEN=... # опционально, experimental
+export ZAI_API_KEY=...                    # опционально
+export YANDEXGPT_API_KEY=...              # опционально, нативный адаптер v0.2
+export YANDEXGPT_FOLDER_ID=b1g...         # обязателен для YandexGPT
+export GIGACHAT_AUTH_KEY=...              # опционально, OAuth сам получит токен
 ```
 
 ## Быстрый старт
@@ -80,11 +82,15 @@ providers:
     base_url: https://api.z.ai/api/paas/v4   # override при необходимости
   deepseek:
     api_key_env: DEEPSEEK_API_KEY            # имя env-переменной
+  yandexgpt:
+    api_key_env: YANDEXGPT_API_KEY           # + YANDEXGPT_FOLDER_ID в env
+  gigachat:
+    api_key_env: GIGACHAT_AUTH_KEY           # OAuth внутри адаптера
 
 routing:
   tasks:
-    coding:      [deepseek/deepseek-chat, zai/glm-4.6, gigachat/GigaChat-Pro]
-    reasoning:   [deepseek/deepseek-reasoner, zai/glm-4.6]
+    coding:      [deepseek/deepseek-chat, zai/glm-4.6, gigachat/GigaChat-Pro, yandexgpt/yandexgpt]
+    reasoning:   [deepseek/deepseek-reasoner, zai/glm-4.6, yandexgpt/yandexgpt]
     cheap:       [zai/glm-4.5-air, deepseek/deepseek-chat]
     judge:       [zai/glm-4.6, deepseek/deepseek-chat]   # судья ≠ кодер
   params:
@@ -107,8 +113,10 @@ defaults:
 |---|---|---|
 | `deepseek` | ✅ работает | OpenAI-compatible; `deepseek-reasoner` — chain-of-thought |
 | `zai` | ✅ работает | GLM; международный endpoint, есть mainland-альтернатива |
-| `gigachat` | ⚠️ experimental | нужен access-токен из OAuth (v0.2 — сам OAuth-flow) |
-| `yandexgpt` | 🚧 v0.2 | нативный API (modelUri + folder_id), не OpenAI-compatible |
+| `yandexgpt` | ✅ адаптер v0.2 | нативный протокол: Api-Key/IAM + `YANDEXGPT_FOLDER_ID`, `modelUri = gpt://<folder>/<model>`; модель с `://` в имени проходит как есть (`ds://…` файнтюны) |
+| `gigachat` | ⚠️ адаптер v0.2, live-проверки ждут ключа | OAuth Basic `GIGACHAT_AUTH_KEY` → токен с авто-refresh (~30 мин); TLS российского CA — при ошибке хендшейка см. `GIGACHAT_CA_BUNDLE` / `GIGACHAT_ALLOW_INSECURE` |
+
+Нативные адаптеры (`yandexgpt`, `gigachat`) написаны на чистом stdlib (`urllib`, без `openai`-SDK): OAuth-танцы и TLS-политики — внутреннее дело адаптера, наружу — тот же `LLMPort`. `yandexgpt` замыкает все builtin-цепи: **только Яндекс-аккаунт — уже рабочий сетап**, санкционная устойчивость по построению.
 
 ## Архитектура
 
@@ -139,14 +147,16 @@ Hexagonal: `ports/` (стабильный интерфейс) ← `providers/` (
 ```bash
 pip install -e ".[dev]"
 pytest -q                      # юнит-тесты, без сети и ключей
-DEEPSEEK_API_KEY=... pytest -m live -v   # живой smoke (1 дешёвый вызов)
+DEEPSEEK_API_KEY=... pytest -m live -v                        # живой smoke DeepSeek
+YANDEXGPT_API_KEY=... YANDEXGPT_FOLDER_ID=... pytest -m live -v   # + нативный YandexGPT
+GIGACHAT_AUTH_KEY=... pytest -m live -v                       # + нативный GigaChat
 ```
 
 ## Roadmap
 
 - **v0.1** — порт, generic-адаптер, DeepSeek + Z.ai, роутер с fallback, CLI ✅
-- **v0.2** — async-порт (`acomplete`/`astream`), GigaChat OAuth-flow, нативный YandexGPT-адаптер, embeddings (`embed()`), cost-таблица в usage
-- **v0.3** — Langfuse-хук из коробки, per-project политики (данные не покидают РФ), upstream PR'ы в LiteLLM
+- **v0.2** — нативный YandexGPT-адаптер (Api-Key/IAM + folder), GigaChat OAuth-flow с авто-refresh, stdlib-транспорт для нативных адаптеров, yandexgpt-fallback во всех цепях ✅
+- **v0.3** — async-порт (`acomplete`/`astream`), embeddings (`embed()`), cost-таблица в usage, Langfuse-хук из коробки, upstream PR'ы в LiteLLM
 
 ## Лицензия
 

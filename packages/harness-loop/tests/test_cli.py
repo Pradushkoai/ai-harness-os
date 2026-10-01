@@ -10,7 +10,7 @@ from russian_llm_pack import RLLError
 from harness_loop import cli
 from harness_loop.types import LoopResult
 
-from conftest import MODULE_BROKEN, MODULE_OK, FakeLLMPort, FakeVerifier, fenced, make_verify_result
+from conftest import MODULE_OK, FakeLLMPort, FakeVerifier, fenced, make_verify_result
 
 
 def make_loop_result(passed=True, failure_reason="", code="Процедура А()\nКонецПроцедуры\n"):
@@ -258,8 +258,8 @@ class TestEval:
         payload = json.loads(capsys.readouterr().out)
 
         assert code == 0
-        assert payload["total"] == 10
-        assert payload["resolved"] == 10
+        assert payload["total"] == 30  # v0.2 benchmark size
+        assert payload["resolved"] == 30
         assert report_json.is_file()
         assert "Mini SWE-bench-BSL" in report_md.read_text(encoding="utf-8")
 

@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from dataclasses import replace
 from pathlib import Path
 from typing import Optional, Sequence
 
@@ -30,7 +31,7 @@ from .evals import bundled_tasks_path, load_tasks, run_eval
 from .judge import Judge, JudgeConfig
 from .loop import BslAgentLoop, RouterPort
 from .telemetry import telemetry_from_env
-from .types import LoopConfig, LoopResult
+from .types import LoopConfig
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -251,6 +252,11 @@ def _run_eval(args: argparse.Namespace) -> int:
             return 2
         tasks = tasks[: args.limit]
 
+    # CLI --context fills tasks that have no context of their own
+    cli_context = getattr(args, "context", None) or ""
+    if cli_context:
+        tasks = [replace(t, context=t.context or cli_context) for t in tasks]
+
     config = LoopConfig(
         max_iterations=args.max_iterations,
         filename=args.filename,
@@ -268,7 +274,6 @@ def _run_eval(args: argparse.Namespace) -> int:
 
     telemetry = telemetry_from_env() if getattr(args, "langfuse", False) else None
     loop = BslAgentLoop(llm=llm, verifier=verifier, config=config, judge=judge)
-    context = getattr(args, "context", None) or ""
 
     def _on_task(outcome) -> None:
         if telemetry is not None:

@@ -15,7 +15,6 @@ from harness_loop import telemetry as telemetry_module
 from harness_loop.telemetry import LangfuseTelemetry, telemetry_from_env
 from harness_loop.types import IterationLog
 
-from conftest import make_verify_result
 
 
 class Recorder:

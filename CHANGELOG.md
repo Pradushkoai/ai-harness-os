@@ -2,6 +2,13 @@
 
 Формат — [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/). История отдельных пакетов — в их собственных CHANGELOG.
 
+## [0.6.0] — 2026-10-01
+
+### Added
+- **`russian-llm-pack` v0.2.0 — нативные адаптеры RU-провайдеров** (Phase 0 по вердикту: «пресет-заглушка не даёт fallback»). **YandexGPT**: протокол Yandex Foundation Models (modelUri, {role, text}, x-folder-id), Api-Key или IAM-токен, `YANDEXGPT_FOLDER_ID` обязателен, файнтюн-URI (`ds://…`) проходят как есть. **GigaChat**: OAuth Basic-флоу внутри адаптера (access-токен ~30 мин, авто-refresh за 60с до истечения, RqUID per request) либо готовый токен; TLS российского CA — верификация по умолчанию, при ошибке хендшейка понятная ошибка с фиксами (`GIGACHAT_CA_BUNDLE` / `GIGACHAT_ALLOW_INSECURE=1`). Оба — на чистом stdlib (новый общий `providers/_http.py`), наружу тот же `LLMPort`. `yandexgpt` замыкает все builtin-цепи: сетап с одним лишь Яндекс-аккаунтом работоспособен. 63 → 125 юнит-тестов (фейковый транспорт) + live-smoke для обоих (скип без ключей).
+- **`harness-loop` v0.3.0 — бенчмарк 10 → 30 задач** (Phase 1 по вердикту: «10-50 задач»). Новые категории dates / collections / query, 4 hard-задачи, интеграционный гейт: каждое reference-решение проходит реальный bsl-language-server с 0 Error (один JVM-прогон на весь набор). 144 → 146 юнит-тестов. Починен мёртвый флаг `eval --context`.
+- **Первый живой прогон бенчмарка (юзер, Windows): mini SWE-bench-BSL v0.1 = 10/10 (100%)**, 13 итераций, ~6.5K токенов — конвейер работает end-to-end на реальном DeepSeek + реальном LS. Фиксация: benchmark saturated, рост до 30 задач — ответ.
+
 ## [0.5.0] — 2026-10-01
 
 ### Added

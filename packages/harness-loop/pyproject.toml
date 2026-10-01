@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "harness-loop"
-version = "0.2.0"
+version = "0.3.0"
 description = "Agent loop for 1C/BSL: LLM generation (russian-llm-pack) gated by bsl-language-server verification (bsl-verify) with an optional LLM-as-judge second opinion, Langfuse telemetry and a mini SWE-bench-BSL eval"
 readme = "README.md"
 requires-python = ">=3.10"

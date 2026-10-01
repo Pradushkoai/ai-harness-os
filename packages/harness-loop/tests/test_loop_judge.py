@@ -8,7 +8,6 @@ from bsl_verify import Severity
 
 from harness_loop.judge import Judge
 from harness_loop.loop import BslAgentLoop
-from harness_loop.prompt import judge_fix_prompt, judge_review_prompt
 from harness_loop.types import LoopConfig
 
 from conftest import MODULE_OK, FakeLLMPort, FakeVerifier, fenced, make_verify_result

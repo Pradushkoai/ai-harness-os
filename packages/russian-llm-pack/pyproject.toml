@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "russian-llm-pack"
-version = "0.1.0"
+version = "0.2.0"
 description = "Unified LLM port for sanction-friendly providers (DeepSeek, Z.ai, GigaChat, YandexGPT) with YAML routing and fallback chains"
 readme = "README.md"
 requires-python = ">=3.10"

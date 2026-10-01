@@ -48,3 +48,42 @@ def test_router_smoke_default_task():
     result = router.complete("coding", "Ответь ровно одним словом: работает?", max_tokens=32)
     assert result.text.strip()
     print(f"\n[smoke] router(coding) -> {result.provider}/{result.model}: {result.text!r}")
+
+
+def test_yandexgpt_native_smoke():
+    """Native YandexGPT: needs YANDEXGPT_API_KEY (or IAM token) + folder id."""
+    key = os.environ.get("YANDEXGPT_API_KEY") or os.environ.get("YANDEXGPT_IAM_TOKEN")
+    folder = os.environ.get("YANDEXGPT_FOLDER_ID")
+    if not (key and folder):
+        pytest.skip("YANDEXGPT_API_KEY/YANDEXGPT_IAM_TOKEN + YANDEXGPT_FOLDER_ID not set")
+    adapter = build_provider("yandexgpt")
+    assert adapter is not None, "provider did not build despite credentials"
+
+    result = adapter.complete(
+        [ChatMessage.user("Ответь ровно одним словом: работает?")],
+        max_tokens=32,
+        temperature=0.0,
+    )
+    assert result.text.strip(), f"empty completion: {result!r}"
+    assert result.usage.total_tokens > 0
+    print(f"\n[smoke] yandexgpt -> {result.text!r} "
+          f"({result.usage.total_tokens} tok, {result.latency_ms:.0f} ms)")
+
+
+def test_gigachat_native_smoke():
+    """Native GigaChat: needs GIGACHAT_AUTH_KEY (OAuth) or GIGACHAT_ACCESS_TOKEN."""
+    key = os.environ.get("GIGACHAT_AUTH_KEY") or os.environ.get("GIGACHAT_ACCESS_TOKEN")
+    if not key:
+        pytest.skip("GIGACHAT_AUTH_KEY / GIGACHAT_ACCESS_TOKEN not set")
+    adapter = build_provider("gigachat")
+    assert adapter is not None, "provider did not build despite credentials"
+
+    result = adapter.complete(
+        [ChatMessage.user("Ответь ровно одним словом: работает?")],
+        max_tokens=32,
+        temperature=0.0,
+    )
+    assert result.text.strip(), f"empty completion: {result!r}"
+    assert result.usage.total_tokens > 0
+    print(f"\n[smoke] gigachat -> {result.text!r} "
+          f"({result.usage.total_tokens} tok, {result.latency_ms:.0f} ms)")

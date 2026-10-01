@@ -40,7 +40,7 @@ from bsl_verify import BslVerifyError, BslVerifier, Severity, VerifyResult
 from russian_llm_pack import ChatMessage, RLLError, Router
 
 from .extract import extract_bsl_code
-from .judge import Judge, JudgeVerdict, judge_feedback
+from .judge import Judge, judge_feedback
 from .prompt import (
     SYSTEM_PROMPT,
     fix_prompt,

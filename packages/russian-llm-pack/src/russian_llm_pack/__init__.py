@@ -13,6 +13,8 @@ Security rule: API keys live in environment variables only. Never in YAML,
 never in code, never in commits.
 """
 
+from .core.config import RouterConfig, load_config
+from .core.router import Router
 from .types import (
     ChatMessage,
     CompletionResult,
@@ -27,10 +29,8 @@ from .types import (
     StreamEvent,
     UsageInfo,
 )
-from .core.config import RouterConfig, load_config
-from .core.router import Router
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 __all__ = [
     "ChatMessage",
@@ -47,6 +47,6 @@ __all__ = [
     "RouterConfig",
     "StreamEvent",
     "UsageInfo",
-    "load_config",
     "__version__",
+    "load_config",
 ]

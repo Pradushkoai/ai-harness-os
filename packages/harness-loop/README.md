@@ -20,7 +20,7 @@ Agent loop для 1С/BSL: **генерация → верификация → (
 - **Диагностики как feedback.** Модель получает не абстрактное «код плохой», а конкретные `module.bsl:4:1 ERROR ParseError: ...` — с позициями, как в редакторе.
 - **Judge как второе мнение.** Верификатор ловит синтаксис и стандарты, но не «решает ли код задачу». Judge (другая модель через тот же роутер) смотрит на задачу + код + остаточные диагностики и может наложить вето — с конкретными замечаниями в следующий промпт.
 - **Полная наблюдаемость.** Каждая итерация логируется: токены, латентности LLM и верификатора, счётчики диагностик, вердикт judge, финальный код. `--json` — машиночитаемо; `--langfuse` — телеметрия в Langfuse (ключи в env, без ключей — тихий no-op).
-- **Mini SWE-bench-BSL.** Встроенный набор из 10 задач с reference-решениями — первый публичный бенчмарк генерации BSL. `harness-loop eval` гоняет его и отдаёт отчёт (JSON/markdown).
+- **Mini SWE-bench-BSL.** Встроенный набор из 30 задач (9 категорий: function / loop / branching / errors / string / structure / dates / collections / query; 8 easy / 18 medium / 4 hard) с reference-решениями — первый публичный бенчмарк генерации BSL. `harness-loop eval` гоняет его и отдаёт отчёт (JSON/markdown). Каждое эталонное решение проверено реальным bsl-language-server (интеграционный тест: 0 Error-диагностик).
 
 ## Установка
 
@@ -57,7 +57,7 @@ harness-loop run "Процедура печати ценника" \
     --max-iterations 4 \
     --save module.bsl
 
-# бенчмарк: mini SWE-bench-BSL (10 задач, отчёт JSON + markdown)
+# бенчмарк: mini SWE-bench-BSL (30 задач, отчёт JSON + markdown)
 harness-loop eval --save-report report.json --markdown report.md
 harness-loop eval --limit 3 --judge --verbose  # подмножество, с judge
 
@@ -162,6 +162,7 @@ DEEPSEEK_API_KEY=... BSL_LS_JAR=... pytest -m live -v  # полный живой
 
 - **v0.1** — цикл генерация→верификация→фикс ✅
 - **v0.2** — judge-цепь (L2), телеметрия Langfuse, mini SWE-bench-BSL (10 задач) ✅
+- **v0.3** — бенчмарк 10 → 30 задач (dates/collections/query, hard-уровень), интеграционный гейт эталонов на реальном LS ✅
 - **v0.3** — рост набора бенчмарка (50+ задач, категории под реальные 1С-проекты), judge-промпты против reference-решений
 - **v0.4** — движок DeepAgents/LangGraph для задач с планированием; этот цикл остаётся эталоном поведения и reference-контрактом портов
 
