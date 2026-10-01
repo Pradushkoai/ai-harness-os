@@ -10,10 +10,10 @@
 |---|---|---|
 | [`russian-llm-pack`](packages/russian-llm-pack/) | Единый LLM-порт: DeepSeek / Z.ai / GigaChat / YandexGPT, YAML-роутинг задач, fallback-цепочки, CLI `rlp` | v0.1.0 — работает вживую |
 | [`bsl-verify`](packages/bsl-verify/) | Статическая проверка 1С/BSL через bsl-language-server: backpressure L0/L1, политика как код, CLI `bsl-check` / `bsl-doctor` | v0.1.1 — работает вживую (v1.0.7 LS) |
-| [`harness-loop`](packages/harness-loop/) | Цикл «генерация → верификация → исправление»: LLM пишет BSL-модуль, верификатор гейтит, диагностики идут обратно в модель; CLI `harness-loop run/doctor` | v0.1.0 — интеграционно проверен (fake LLM + реальный LS) |
+| [`harness-loop`](packages/harness-loop/) | Цикл «генерация → верификация → (ревью) → исправление»: LLM пишет BSL-модуль, верификатор гейтит, judge (вторая модель) накладывает вето; телеметрия Langfuse; mini SWE-bench-BSL (10 задач); CLI `harness-loop run/eval/doctor` | v0.2.0 — интеграционно проверен (fake LLM + реальный LS) |
 | [`agents-md`](packages/agents-md/) | Генератор AGENTS.md для AI-агентов: анализ проекта (1C-EDT / 1C-XML / python / js-ts / generic), RU-шаблоны, валидатор стандарта; CLI `agents-md init/validate` | v0.1.0 — чистый stdlib, dogfooded на этом репо |
 
-**Дальше по плану:** judge-цепь в цикл + телеметрия Langfuse → движок DeepAgents для задач с планированием (порты те же).
+**Дальше по плану:** рост бенчмарка до 50+ задач + judge против reference-решений → real-world пилот на 1 BSL-проекте → движок DeepAgents как optional backend на тех же портах (Phase 2 вердикта).
 
 ## Принципы
 
@@ -54,10 +54,12 @@ pip install -e packages/bsl-verify
 bsl-doctor                 # что не хватает и как починить
 bsl-check src/             # проверка с диагностиками и exit-кодами
 
-# Agent loop: генерация → верификация → исправление
+# Agent loop: генерация → верификация → исправление (+ judge, + бенчмарк)
 pip install -e "packages/harness-loop[dev]"
 harness-loop doctor        # оба слоя: ключи + java/jar
 harness-loop run "Напиши функцию СуммаДвухЧисел(А, Б)" --save module.bsl
+harness-loop run "Напиши функцию проверки ИНН" --judge --judge-chain judge
+harness-loop eval --markdown report.md   # mini SWE-bench-BSL: 10 задач, отчёт
 
 # Генератор AGENTS.md (для любого проекта, чистый stdlib)
 pip install -e packages/agents-md

@@ -42,6 +42,34 @@ def patched_factories(monkeypatch):
     return holder
 
 
+@pytest.fixture
+def patched_judge(monkeypatch):
+    """Replace judge construction with a scripted fake (PASS by default)."""
+
+    holder = {}
+    judge_llm = FakeLLMPort(["VERDICT: PASS\nSCORE: 9\nREASONING: ok"])
+    holder["judge_llm"] = judge_llm
+
+    def fake_build_judge(args):
+        from harness_loop.judge import Judge
+
+        return Judge(judge_llm)
+
+    monkeypatch.setattr(cli, "_build_judge", fake_build_judge)
+    return holder
+
+
+@pytest.fixture
+def patched_eval_factories(monkeypatch):
+    """LLM/verifier with plenty of OK responses (eval runs many tasks)."""
+
+    llm = FakeLLMPort([fenced(MODULE_OK)] * 50)
+    verifier = FakeVerifier([make_verify_result(passed=True)] * 50)
+    monkeypatch.setattr(cli, "_build_llm", lambda args: llm)
+    monkeypatch.setattr(cli, "_build_verifier", lambda args: verifier)
+    return {"llm": llm, "verifier": verifier}
+
+
 class TestRun:
     def test_passed_exit_zero(self, patched_factories, capsys):
         code = cli.main(["run", "Напиши процедуру"])
@@ -139,6 +167,148 @@ class TestRun:
 
         user_prompt = patched_factories["llm"].calls[0][1].content
         assert "Конфигурация УТ 11.5" in user_prompt
+
+
+class TestRunJudge:
+    def test_judge_pass_exit_zero(self, patched_factories, patched_judge, capsys):
+        code = cli.main(["run", "задача", "--judge"])
+        out = capsys.readouterr().out
+
+        assert code == 0
+        assert "judge: PASS" in out
+        assert "score 9" in out
+
+    def test_judge_not_built_without_flag(self, patched_factories, monkeypatch):
+        built = []
+
+        def spy_build_judge(args):
+            built.append(args)
+            raise AssertionError("must not be called without --judge")
+
+        monkeypatch.setattr(cli, "_build_judge", spy_build_judge)
+        code = cli.main(["run", "задача"])
+
+        assert code == 0
+        assert built == []
+
+    def test_judge_veto_exit_one(self, patched_factories, patched_judge, monkeypatch, capsys):
+        monkeypatch.setattr(
+            cli, "_build_llm",
+            lambda args: FakeLLMPort([fenced(MODULE_OK)] * 3),
+        )
+        monkeypatch.setattr(
+            cli, "_build_verifier",
+            lambda args: FakeVerifier([make_verify_result(passed=True)] * 3),
+        )
+        patched_judge["judge_llm"].responses = ["VERDICT: FAIL\nISSUES:\n- x\n"] * 3
+
+        code = cli.main(["run", "задача", "--judge", "--max-iterations", "3"])
+        out = capsys.readouterr().out
+
+        assert code == 1
+        assert "judge_rejected" in out
+
+    def test_judge_json_payload(self, patched_factories, patched_judge, capsys):
+        code = cli.main(["run", "задача", "--judge", "--json"])
+        payload = json.loads(capsys.readouterr().out)
+
+        assert code == 0
+        assert payload["judge"]["approved"] is True
+        assert payload["judge"]["score"] == 9
+        assert payload["totals"]["judge_ms"] == 12.5
+
+    def test_judge_verbose_progress(self, patched_factories, patched_judge, capsys):
+        code = cli.main(["run", "задача", "--judge", "--verbose"])
+        err = capsys.readouterr().err
+
+        assert code == 0
+        assert "judge PASS" in err
+
+
+class TestRunLangfuse:
+    def test_langfuse_without_keys_is_safe_noop(self, patched_factories, monkeypatch, capsys):
+        monkeypatch.delenv("LANGFUSE_PUBLIC_KEY", raising=False)
+        monkeypatch.delenv("LANGFUSE_SECRET_KEY", raising=False)
+
+        code = cli.main(["run", "задача", "--langfuse"])
+
+        assert code == 0
+        assert "PASSED" in capsys.readouterr().out
+
+
+class TestEval:
+    def test_eval_bundled_limit_two(self, patched_eval_factories, capsys):
+        code = cli.main(["eval", "--limit", "2"])
+        out = capsys.readouterr().out
+
+        assert code == 0
+        assert "BSL eval: 2/2 resolved (100%)" in out
+        assert "[PASS] func-sum-two-numbers" in out
+
+    def test_eval_json_and_reports(self, patched_eval_factories, tmp_path, capsys):
+        report_json = tmp_path / "report.json"
+        report_md = tmp_path / "report.md"
+
+        code = cli.main([
+            "eval",
+            "--save-report", str(report_json),
+            "--markdown", str(report_md),
+            "--json",
+        ])
+        payload = json.loads(capsys.readouterr().out)
+
+        assert code == 0
+        assert payload["total"] == 10
+        assert payload["resolved"] == 10
+        assert report_json.is_file()
+        assert "Mini SWE-bench-BSL" in report_md.read_text(encoding="utf-8")
+
+    def test_eval_bad_tasks_file_exit_two(self, patched_factories, capsys):
+        code = cli.main(["eval", "--tasks", "нет_такого_файла.yaml"])
+
+        assert code == 2
+        assert "error" in capsys.readouterr().err
+
+    def test_eval_bad_limit_exit_two(self, patched_factories, capsys):
+        code = cli.main(["eval", "--limit", "0"])
+
+        assert code == 2
+
+    def test_eval_with_judge(self, patched_eval_factories, patched_judge, capsys):
+        patched_judge["judge_llm"].responses = [
+            "VERDICT: PASS\nSCORE: 8\nREASONING: ок"
+        ] * 10
+
+        code = cli.main(["eval", "--limit", "2", "--judge"])
+        out = capsys.readouterr().out
+
+        assert code == 0
+        assert "2/2 resolved" in out
+
+    def test_eval_version_subparser(self, capsys):
+        with pytest.raises(SystemExit) as excinfo:
+            cli._main(["eval", "--version"])
+        assert excinfo.value.code == 0
+
+
+class TestDoctorLangfuse:
+    def test_doctor_mentions_langfuse(self, monkeypatch, capsys, tmp_path):
+        from bsl_verify import runner as bsl_runner
+
+        monkeypatch.delenv("RLP_CONFIG", raising=False)
+        monkeypatch.delenv("LANGFUSE_PUBLIC_KEY", raising=False)
+        monkeypatch.delenv("LANGFUSE_SECRET_KEY", raising=False)
+        for var in ("BSL_JAVA", "JAVA_HOME", "BSL_LS_JAR"):
+            monkeypatch.delenv(var, raising=False)
+        monkeypatch.setattr(bsl_runner.shutil, "which", lambda name: None)
+        monkeypatch.setattr(bsl_runner.Path, "home", lambda: tmp_path)
+        monkeypatch.chdir(tmp_path)
+
+        code = cli.main(["doctor"])
+        out = capsys.readouterr().out
+
+        assert code == 2
+        assert "langfuse" in out.lower()
 
 
 class TestVersion:

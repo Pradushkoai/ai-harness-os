@@ -34,13 +34,17 @@ packages/
 │       ├── runner.py          # java/jar discovery + subprocess
 │       ├── verifier.py        # BslVerifier: dir / files / module_text
 │       └── cli.py             # bsl-check / bsl-doctor
-├── harness-loop/              # agent loop: генерация→верификация→фикс
+├── harness-loop/              # agent loop: генерация→верификация→(judge)→фикс
     └── src/harness_loop/
         ├── types.py           # LoopConfig / IterationLog / LoopResult
         ├── extract.py         # извлечение BSL из ответа LLM (фенсы/эвристика)
-        ├── prompt.py          # системный / task / fix промпты
+        ├── prompt.py          # системный / task / fix / judge промпты
+        ├── judge.py           # LLM-as-judge: вердикт, толерантный парсер, вето
+        ├── telemetry.py       # Langfuse: on_event/on_iteration → ingestion API
+        ├── evals.py           # mini SWE-bench-BSL: задачи, раннер, отчёты
+        ├── eval_data/         # tasks_v0.yaml — 10 задач с reference-решениями
         ├── loop.py            # BslAgentLoop + RouterPort (Router→LLMPort)
-        └── cli.py             # harness-loop run / doctor
+        └── cli.py             # harness-loop run / eval / doctor
 └── agents-md/                 # генератор AGENTS.md (зависимостей нет)
     └── src/agents_md/
         ├── types.py           # ProjectInfo / StructureEntry / KIND_*
@@ -55,7 +59,7 @@ packages/
 
 - **russian-llm-pack:** харнесс знает только `LLMPort`. Retry-политика в Router, не в SDK (`max_retries=0`). Классификация ошибок: auth → скип провайдера; transient → retry; request → следующая модель. Провайдер без ключа не ломает систему.
 - **bsl-verify:** путь данных `staging dir → analyze -r json → parser → policy → VerifyResult`. Exit-коды CLI: 0 прошёл / 1 нарушения / 2 окружение. Позиции LSP 0-based внутри, 1-based в человекочитаемом выводе. Отфильтрованные политикой диагностики не существуют нигде.
-- **harness-loop:** цикл `LLM → extract → verify → fix-промпт с диагностиками → ...` со стоп-условиями passed / бюджет / llm_error / verifier_error. Доменные ошибки НЕ бросаются наружу — превращаются в `failure_reason`. `RouterPort` — единственная точка входа роутинга в цикл. Feedback-промпты капятся (`max_feedback_lines`), диагностики сортированы: Error первыми. CLI: exit 0/1/2 в конвенции репо, `--version` обязан жить на корневом И сабпарсерах (урок bsl-check).
+- **harness-loop:** цикл `LLM → extract → verify → fix-промпт → ...` (+ judge после прохождения верификатора). Стоп-условия: passed / бюджет / judge_rejected / llm_error / verifier_error. Доменные ошибки НЕ бросаются наружу — превращаются в `failure_reason`. `RouterPort` — единственная точка входа роутинга в цикл (у judge — свой экземпляр с другим чейном). Judge: вето только явное (нет распознанного вердикта = PASS c `parsed=False`), RLLError judge не отбрасывает код, прошедший верификатор (громкий `judge_error`). Телеметрия `--langfuse`: stdlib-клиент, ключи только по именам env, no-op без ключей, сетевые ошибки проглатываются, код/промпты не шлёт. Eval: `resolved = loop.passed`; reference-решения репортятся, гейтинга по ним нет; exit 0 при любом pass rate. CLI: exit 0/1/2 в конвенции репо, `--version` обязан жить на корневом И сабпарсерах (урок bsl-check).
 - **agents-md:** анализ только по файловой системе — никогда не исполняет код проекта и не читает `.env`. Сгенерированный файл — черновик: человек проверяет и коммитит. Лимит 32 KiB — каскадный лимит стандарта, не наш каприз. Валидатор принимает RU-алиасы обязательных разделов. Никаких зависимостей и шаблонизаторов — только stdlib.
 
 ## Установка
@@ -81,6 +85,7 @@ DEEPSEEK_API_KEY=... pytest -m live -v        # живой LLM (russian-llm-pack
 
 ## Куда расти (по порядку)
 
-1. judge-цепь в `harness-loop` (второе мнение другой модели о финальном коде) + телеметрия итераций в Langfuse через события роутера
-2. Skill Registry client
-3. Движок DeepAgents/LangGraph для задач с планированием и подзадачами — потребляет те же порты (`LLMPort`, `BslVerifier`), текущий цикл остаётся эталоном поведения
+1. рост бенчмарка SWE-bench-BSL (50+ задач, категории под реальные 1С-проекты) + judge-промпты с reference-решениями
+2. real-world пилот на одном BSL-проекте (10–20 задач через `harness-loop eval`)
+3. YandexGPT нативный адаптер (IAM-токены) — пресет-заглушка не даёт fallback
+4. Движок DeepAgents/LangGraph как optional backend на тех же портах (`LLMPort`, `BslVerifier`), текущий цикл остаётся эталоном поведения

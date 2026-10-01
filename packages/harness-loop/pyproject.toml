@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "harness-loop"
-version = "0.1.0"
-description = "Agent loop MVP for 1C/BSL: LLM generation (russian-llm-pack) gated by bsl-language-server verification (bsl-verify) — backpressure L0/L1 as a retry loop"
+version = "0.2.0"
+description = "Agent loop for 1C/BSL: LLM generation (russian-llm-pack) gated by bsl-language-server verification (bsl-verify) with an optional LLM-as-judge second opinion, Langfuse telemetry and a mini SWE-bench-BSL eval"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
@@ -26,6 +26,7 @@ classifiers = [
 dependencies = [
     "russian-llm-pack>=0.1.0",
     "bsl-verify>=0.1.1",
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]

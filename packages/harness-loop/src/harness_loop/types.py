@@ -56,11 +56,14 @@ class IterationLog:
     informations: int = 0
     hints: int = 0
     diagnostics: list = field(default_factory=list)  # list[str], capped
-    note: str = ""  # e.g. "no BSL code extracted"
+    note: str = ""  # e.g. "no BSL code extracted" / judge unavailable
     prompt_tokens: int = 0
     completion_tokens: int = 0
     llm_latency_ms: float = 0.0
     verify_ms: float = 0.0
+    judge_verdict: Optional[bool] = None  # True pass / False fail / None not run
+    judge_issues: list = field(default_factory=list)  # list[str], capped
+    judge_ms: float = 0.0
 
     def to_dict(self) -> dict:
         return {
@@ -78,6 +81,9 @@ class IterationLog:
             "completion_tokens": self.completion_tokens,
             "llm_latency_ms": round(self.llm_latency_ms, 1),
             "verify_ms": round(self.verify_ms, 1),
+            "judge_verdict": self.judge_verdict,
+            "judge_issues": list(self.judge_issues),
+            "judge_ms": round(self.judge_ms, 1),
         }
 
 
@@ -87,8 +93,15 @@ class LoopResult:
 
     failure_reason is empty on success; otherwise one of:
         budget_exhausted — max_iterations reached, code still failing
+        judge_rejected   — verifier passed, but the judge veto survived the budget
         llm_error        — the LLM port failed (no keys / chain exhausted)
         verifier_error   — bsl-verify environment failure (no java / no jar)
+
+    judge is the parsed verdict when a judge ran and approved the module;
+    judge_error is set when the judge LLM failed — in that case the code
+    passed the verifier and passed=True is kept (the verifier stays the
+    authority; a judge outage must not discard working code), the outage
+    is surfaced loudly instead of being silently ignored.
     """
 
     passed: bool
@@ -96,6 +109,8 @@ class LoopResult:
     iterations: list = field(default_factory=list)  # list[IterationLog]
     failure_reason: str = ""
     error: Optional[str] = None
+    judge: Optional["JudgeVerdict"] = None  # noqa: F821 — resolved at runtime
+    judge_error: Optional[str] = None
 
     @property
     def total_prompt_tokens(self) -> int:
@@ -113,6 +128,10 @@ class LoopResult:
     def total_verify_ms(self) -> float:
         return sum(i.verify_ms for i in self.iterations)
 
+    @property
+    def total_judge_ms(self) -> float:
+        return sum(i.judge_ms for i in self.iterations)
+
     def summary_lines(self) -> list[str]:
         """Human/agent-readable report, one line per iteration."""
 
@@ -128,6 +147,8 @@ class LoopResult:
             f"llm {self.total_llm_ms / 1000.0:.1f}s, "
             f"verify {self.total_verify_ms / 1000.0:.1f}s"
         )
+        if self.judge is not None:
+            timing += f", judge {self.total_judge_ms / 1000.0:.1f}s"
         lines = [f"{head} [{tokens}; {timing}]"]
         for it in self.iterations:
             if not it.code_extracted:
@@ -141,8 +162,19 @@ class LoopResult:
                     f"verify FAILED ({it.errors} error, {it.warnings} warning, "
                     f"{it.infos} info)"
                 )
+            if it.judge_verdict is True:
+                desc += " judge PASS"
+            elif it.judge_verdict is False:
+                desc += f" judge FAIL ({len(it.judge_issues)} замечаний)"
             model = f" [{it.model}]" if it.model else ""
             lines.append(f"  iter {it.index}{model}: {desc}")
+        if self.judge is not None:
+            score = f", score {self.judge.score}" if self.judge.score is not None else ""
+            lines.append(f"  judge: {'PASS' if self.judge.approved else 'FAIL'}{score}")
+            if not self.judge.parsed:
+                lines.append("  judge: ответ не в формате — вердикт не распознан (запрета нет)")
+        if self.judge_error:
+            lines.append(f"  judge unavailable: {self.judge_error}")
         if self.error:
             lines.append(f"  error: {self.error}")
         return lines
@@ -150,7 +182,7 @@ class LoopResult:
     def to_dict(self) -> dict:
         """JSON-safe representation (used by `harness-loop run --json`)."""
 
-        return {
+        payload = {
             "passed": self.passed,
             "failure_reason": self.failure_reason,
             "error": self.error,
@@ -161,6 +193,21 @@ class LoopResult:
                 "completion_tokens": self.total_completion_tokens,
                 "llm_latency_ms": round(self.total_llm_ms, 1),
                 "verify_ms": round(self.total_verify_ms, 1),
+                "judge_ms": round(self.total_judge_ms, 1),
             },
             "code": self.code,
+            "judge_error": self.judge_error,
         }
+        if self.judge is not None:
+            payload["judge"] = {
+                "approved": self.judge.approved,
+                "score": self.judge.score,
+                "issues": list(self.judge.issues),
+                "reasoning": self.judge.reasoning,
+                "parsed": self.judge.parsed,
+                "model": self.judge.model,
+                "latency_ms": round(self.judge.latency_ms, 1),
+            }
+        else:
+            payload["judge"] = None
+        return payload

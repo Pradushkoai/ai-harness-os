@@ -1,11 +1,19 @@
-"""BslAgentLoop — the L0/L1 backpressure loop.
+"""BslAgentLoop — the L0/L1 backpressure loop (+ optional L2 judge).
 
     task -> LLM (LLMPort) -> extract BSL -> BslVerifier.verify_module_text
                         ^                                    |
                         +--- fix prompt: code + diagnostics -+
 
+    verifier passed + judge configured:
+        task + code + residual diagnostics -> Judge.review ->
+            approved   -> LoopResult(passed=True, judge=<verdict>)
+            rejected   -> judge fix prompt -> next iteration
+            RLLError   -> LoopResult(passed=True, judge_error=...) —
+                          the verifier stays the authority; a judge outage
+                          must not discard working code (surfaced loudly)
+
 The loop is a thin orchestrator: no framework, no extra dependencies —
-it only wires two existing ports (russian-llm-pack, bsl-verify) and keeps
+it only wires existing ports (russian-llm-pack, bsl-verify) and keeps
 every decision inspectable in the returned LoopResult.
 
 Why not DeepAgents/LangGraph in v0.1: planning and subagents are not
@@ -14,8 +22,10 @@ BslVerifier are exactly the seams a future DeepAgents engine would
 consume, so growing into one requires no rework of this contract.
 
 Stop conditions:
-    - verifier policy passed            -> LoopResult(passed=True)
+    - verifier policy passed (+ judge approved, if configured)
+                                        -> LoopResult(passed=True)
     - max_iterations exhausted          -> failure_reason="budget_exhausted"
+    - judge veto survived the budget    -> failure_reason="judge_rejected"
     - RLLError from the LLM port        -> failure_reason="llm_error"
     - BslVerifyError from the verifier  -> failure_reason="verifier_error"
       (environment problems: no java / no jar / analyze timeout)
@@ -30,7 +40,13 @@ from bsl_verify import BslVerifyError, BslVerifier, Severity, VerifyResult
 from russian_llm_pack import ChatMessage, RLLError, Router
 
 from .extract import extract_bsl_code
-from .prompt import SYSTEM_PROMPT, fix_prompt, task_prompt
+from .judge import Judge, JudgeVerdict, judge_feedback
+from .prompt import (
+    SYSTEM_PROMPT,
+    fix_prompt,
+    judge_fix_prompt,
+    task_prompt,
+)
 from .types import IterationLog, LoopConfig, LoopResult
 
 IterationCallback = Callable[[IterationLog], None]
@@ -74,21 +90,27 @@ class RouterPort:
 
 
 class BslAgentLoop:
-    """Generate -> verify -> fix loop over one LLMPort and one BslVerifier."""
+    """Generate -> verify (-> judge) -> fix loop over ports."""
 
     def __init__(
         self,
         llm,
         verifier: BslVerifier,
         config: Optional[LoopConfig] = None,
+        judge: Optional[Judge] = None,
     ) -> None:
         self._llm = llm
         self._verifier = verifier
         self._config = config or LoopConfig()
+        self._judge = judge
 
     @property
     def config(self) -> LoopConfig:
         return self._config
+
+    @property
+    def judge(self) -> Optional[Judge]:
+        return self._judge
 
     def run(
         self,
@@ -102,10 +124,13 @@ class BslAgentLoop:
         iterations: list[IterationLog] = []
         code = ""
         diagnostics: list[str] = []
+        feedback_from_judge = False  # next fix prompt shape (verifier vs judge)
 
         for index in range(1, config.max_iterations + 1):
             if index == 1:
                 user = task_prompt(task, context)
+            elif feedback_from_judge:
+                user = judge_fix_prompt(task, context, code, diagnostics)
             else:
                 user = fix_prompt(task, context, code, diagnostics)
             messages = [ChatMessage.system(SYSTEM_PROMPT), ChatMessage.user(user)]
@@ -134,6 +159,7 @@ class BslAgentLoop:
                 log.code_extracted = False
                 log.note = NO_CODE_NOTE
                 diagnostics = [NO_CODE_NOTE]
+                feedback_from_judge = False  # the problem is the answer shape, not review
                 iterations.append(log)
                 self._notify(on_iteration, log)
                 continue  # fix prompt will ask the model to answer properly
@@ -167,18 +193,50 @@ class BslAgentLoop:
             log.diagnostics = format_diagnostics(
                 verdict, config.filename, config.max_feedback_lines
             )
-            iterations.append(log)
-            self._notify(on_iteration, log)
             diagnostics = log.diagnostics
+            feedback_from_judge = False  # verifier diagnostics take precedence
+
+            if verdict.passed and self._judge is None:
+                iterations.append(log)
+                self._notify(on_iteration, log)
+                return LoopResult(passed=True, code=code, iterations=iterations)
 
             if verdict.passed:
-                return LoopResult(passed=True, code=code, iterations=iterations)
+                # L2: second opinion about verifier-approved code
+                try:
+                    jverdict = self._judge.review(task, code, diagnostics)
+                except RLLError as exc:
+                    log.note = f"judge unavailable: {exc}"
+                    iterations.append(log)
+                    self._notify(on_iteration, log)
+                    return LoopResult(
+                        passed=True,
+                        code=code,
+                        iterations=iterations,
+                        judge_error=str(exc),
+                    )
+                log.judge_verdict = jverdict.approved
+                log.judge_issues = list(jverdict.issues)
+                log.judge_ms = jverdict.latency_ms
+                iterations.append(log)
+                self._notify(on_iteration, log)
+                if jverdict.approved:
+                    return LoopResult(
+                        passed=True, code=code, iterations=iterations, judge=jverdict
+                    )
+                # veto -> one more fix round against the review issues
+                diagnostics = judge_feedback(jverdict)
+                feedback_from_judge = True
+                continue
+
+            iterations.append(log)
+            self._notify(on_iteration, log)
 
         return LoopResult(
             passed=False,
             code=code,
             iterations=iterations,
-            failure_reason="budget_exhausted",
+            failure_reason="judge_rejected" if feedback_from_judge else "budget_exhausted",
         )
 
     # -- internals -----------------------------------------------------------
