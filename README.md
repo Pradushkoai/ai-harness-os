@@ -10,10 +10,10 @@
 |---|---|---|
 | [`russian-llm-pack`](packages/russian-llm-pack/) | Единый LLM-порт: DeepSeek / Z.ai / Qwen / GigaChat (OAuth) / YandexGPT (нативный), YAML-роутинг задач, fallback-цепочки, CLI `rlp` | v0.3.0 — DeepSeek живой, Qwen ведёт judge-цепь |
 | [`bsl-verify`](packages/bsl-verify/) | Статическая проверка 1С/BSL через bsl-language-server: backpressure L0/L1, политика как код, CLI `bsl-check` / `bsl-doctor` | v0.1.1 — работает вживую (v1.0.7 LS) |
-| [`harness-loop`](packages/harness-loop/) | Цикл «генерация → верификация → (ревью) → исправление»: LLM пишет BSL-модуль, верификатор гейтит, judge (вторая модель) накладывает вето — в eval судья сравнивает семантику с эталоном (reference-aware, генератор его не видит); телеметрия Langfuse; mini SWE-bench-BSL (54 задачи, 11 категорий, 13 hard; фильтры `--category`/`--difficulty`; L2-агрегаты в отчётах); CLI `harness-loop run/eval/doctor` | v0.5.0 — эталоны всех 54 задач проверены реальным LS |
+| [`harness-loop`](packages/harness-loop/) | Цикл «генерация → верификация → (ревью) → исправление»: LLM пишет BSL-модуль, верификатор гейтит, judge (вторая модель) накладывает вето — в eval судья сравнивает семантику с эталоном (reference-aware, генератор его не видит); телеметрия Langfuse; mini SWE-bench-BSL (70 задач, 15 категорий incl. nstr/http/skd/tablepart — реальные 1С-паттерны, 18 hard; фильтры `--category`/`--difficulty`; L2-агрегаты в отчётах); CLI `harness-loop run/eval/doctor` | v0.6.0 — эталоны всех 70 задач проверены реальным LS |
 | [`agents-md`](packages/agents-md/) | Генератор AGENTS.md для AI-агентов: анализ проекта (1C-EDT / 1C-XML / python / js-ts / generic), RU-шаблоны, валидатор стандарта; CLI `agents-md init/validate` | v0.1.0 — чистый stdlib, dogfooded на этом репо |
 
-**Дальше по плану:** live-прогон 54 задач с независимым судьёй (DeepSeek кодит, Qwen судит — L1+L2-цифры) → рост набора под реальные 1С-проекты (НСтр, СКД, HTTP, табличные части) → real-world пилот на 1 BSL-проекте → движок DeepAgents как optional backend на тех же портах (Phase 2 вердикта).
+**Дальше по плану:** live-прогон 70 задач с независимым судьёй (DeepSeek кодит, Qwen судит — L1+L2-цифры) → real-world пилот на 1 BSL-проекте → движок DeepAgents как optional backend на тех же портах (Phase 2 вердикта).
 
 ## Принципы
 

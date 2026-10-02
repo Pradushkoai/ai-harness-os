@@ -44,9 +44,9 @@ tasks:
 class TestLoadTasks:
     def test_bundled_set_loads(self):
         tasks = load_tasks(bundled_tasks_path())
-        assert len(tasks) == 54  # v0.3: 10 -> 30 -> 54
+        assert len(tasks) == 70  # v0.4: 10 -> 30 -> 54 -> 70
         ids = [t.id for t in tasks]
-        assert len(set(ids)) == 54  # all unique
+        assert len(set(ids)) == 70  # all unique
         assert "func-sum-two-numbers" in ids
         assert "query-doc-period" in ids
         assert "table-create-catalog" in ids
@@ -71,7 +71,11 @@ class TestLoadTasks:
         assert difficulties.count("hard") >= 4
 
     def test_bundled_v03_counts(self):
-        """v0.3 growth: table/numbers categories, exact difficulty mix."""
+        """v0.3 growth: table/numbers categories survive later growth.
+
+        The exact whole-set difficulty mix lives in the v0.4 test; here we
+        pin the v0.3 categories and the anti-saturation floor (>= 13 hard).
+        """
         from collections import Counter
 
         tasks = load_tasks(bundled_tasks_path())
@@ -82,7 +86,31 @@ class TestLoadTasks:
         assert categories["structure"] == 5
 
         difficulties = Counter(t.difficulty for t in tasks)
-        assert difficulties == {"easy": 10, "medium": 31, "hard": 13}
+        assert difficulties["hard"] >= 13  # v0.3 floor, grown to 18 in v0.4
+
+    def test_bundled_v04_counts(self):
+        """v0.4 growth: nstr/http/skd/tablepart categories, exact mix."""
+        from collections import Counter
+
+        tasks = load_tasks(bundled_tasks_path())
+        categories = Counter(t.category for t in tasks)
+        assert categories["nstr"] == 4
+        assert categories["http"] == 4
+        assert categories["skd"] == 4
+        assert categories["tablepart"] == 4
+
+        difficulties = Counter(t.difficulty for t in tasks)
+        assert difficulties == {"easy": 13, "medium": 39, "hard": 18}
+
+    def test_bundled_v04_real_1c_patterns(self):
+        """v0.4: tasks must reference the real 1C API surface they claim."""
+
+        tasks = {t.id: t for t in load_tasks(bundled_tasks_path())}
+        assert "НСтр" in tasks["func-nstr-greeting"].reference
+        assert "|" in tasks["func-multiline-text"].reference  # string literal continuation
+        assert "HTTPСоединение" in tasks["proc-http-get"].reference
+        assert "КомпоновщикМакетаКомпоновкиДанных" in tasks["func-skd-composite-table"].reference
+        assert "ЗаполнитьЗначенияСвойств" in tasks["proc-tp-clear-and-fill"].reference
 
     def test_bundled_difficulty_values_valid(self):
         tasks = load_tasks(bundled_tasks_path())

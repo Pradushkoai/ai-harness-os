@@ -20,7 +20,7 @@ Agent loop для 1С/BSL: **генерация → верификация → (
 - **Диагностики как feedback.** Модель получает не абстрактное «код плохой», а конкретные `module.bsl:4:1 ERROR ParseError: ...` — с позициями, как в редакторе.
 - **Judge как второе мнение.** Верификатор ловит синтаксис и стандарты, но не «решает ли код задачу». Judge (другая модель через тот же роутер) смотрит на задачу + код + остаточные диагностики и может наложить вето — с конкретными замечаниями в следующий промпт.
 - **Полная наблюдаемость.** Каждая итерация логируется: токены, латентности LLM и верификатора, счётчики диагностик, вердикт judge, финальный код. `--json` — машиночитаемо; `--langfuse` — телеметрия в Langfuse (ключи в env, без ключей — тихий no-op).
-- **Mini SWE-bench-BSL.** Встроенный набор из 54 задач (11 категорий: function / loop / branching / errors / string / structure / dates / collections / query / table / numbers; 10 easy / 31 medium / 13 hard) с reference-решениями — первый публичный бенчмарк генерации BSL. `harness-loop eval` гоняет его и отдаёт отчёт (JSON/markdown) с разбивкой по категориям и сложности — видно, *где* модель слаба, а не только средний процент. Каждое эталонное решение проверено реальным bsl-language-server (интеграционный тест: 0 Error-диагностик). Фильтры `--category` / `--difficulty` позволяют сравнивать модели на подмножествах (например, только hard).
+- **Mini SWE-bench-BSL.** Встроенный набор из 70 задач (15 категорий: function / loop / branching / errors / string / structure / dates / collections / query / table / numbers / **nstr / http / skd / tablepart**; 13 easy / 39 medium / 18 hard) с reference-решениями — первый публичный бенчмарк генерации BSL. Новые категории v0.4 — паттерны реальных 1С-проектов: НСтр и многострочные литералы, HTTPСоединение/HTTPЗапрос, программная компоновка данных (СКД), табличные части через коллекции строк. `harness-loop eval` гоняет набор и отдаёт отчёт (JSON/markdown) с разбивкой по категориям и сложности — видно, *где* модель слаба, а не только средний процент. Каждое эталонное решение проверено реальным bsl-language-server (интеграционный тест: 0 Error-диагностик). Фильтры `--category` / `--difficulty` позволяют сравнивать модели на подмножествах (например, только hard или только новые категории `nstr,http,skd,tablepart`).
 
 ## Установка
 
@@ -57,12 +57,13 @@ harness-loop run "Процедура печати ценника" \
     --max-iterations 4 \
     --save module.bsl
 
-# бенчмарк: mini SWE-bench-BSL (54 задачи, отчёт JSON + markdown с разбивками)
+# бенчмарк: mini SWE-bench-BSL (70 задач, отчёт JSON + markdown с разбивками)
 harness-loop eval --save-report report.json --markdown report.md
 harness-loop eval --limit 3 --judge --verbose  # подмножество, с judge
 harness-loop eval --judge --no-judge-reference  # A/B: судья БЕЗ эталонов (как в v0.4)
-harness-loop eval --difficulty hard            # только 13 hard-задач
+harness-loop eval --difficulty hard            # только 18 hard-задач
 harness-loop eval --category table,query       # только выбранные категории
+harness-loop eval --category nstr,http,skd,tablepart  # только реальные 1С-паттерны v0.4
 
 # машиночитаемый результат + прогресс итераций
 harness-loop run "..." --json --verbose
@@ -170,7 +171,7 @@ DEEPSEEK_API_KEY=... BSL_LS_JAR=... pytest -m live -v  # полный живой
 - **v0.3** — бенчмарк 10 → 30 задач (dates/collections/query, hard-уровень), интеграционный гейт эталонов на реальном LS ✅
 - **v0.4** — бенчмарк 30 → 54 задачи (table/numbers, 13 hard против насыщения), разбивки по категориям/сложности в отчётах, фильтры `--category`/`--difficulty` ✅
 - **v0.5** — reference-aware judge: судья сравнивает семантику с эталоном (генератор его не видит), L2-агрегаты в отчётах (judge_mode, approved/vetoed, avg score), `--no-judge-reference` для A/B ✅
-- **v0.6** — рост набора под реальные 1С-проекты (НСтр, СКД, HTTP, табличные части); движок DeepAgents/LangGraph для задач с планированием — этот цикл остаётся эталоном поведения и reference-контрактом портов
+- **v0.6** — рост набора под реальные 1С-проекты: 54 → 70 задач (nstr/http/skd/tablepart, 15 категорий, 18 hard) ✅; движок DeepAgents/LangGraph для задач с планированием — этот цикл остаётся эталоном поведения и reference-контрактом портов
 
 ## Лицензия
 

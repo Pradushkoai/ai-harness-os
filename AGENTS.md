@@ -42,7 +42,7 @@ packages/
 │       ├── judge.py           # LLM-as-judge: вердикт, толерантный парсер, вето
 │       ├── telemetry.py       # Langfuse: on_event/on_iteration → ingestion API
 │       ├── evals.py           # mini SWE-bench-BSL: задачи, раннер, отчёты
-│       ├── eval_data/         # tasks_v0.yaml — 54 задачи (11 категорий) с reference-решениями
+│       ├── eval_data/         # tasks_v0.yaml — 70 задач (15 категорий) с reference-решениями
 │       ├── loop.py            # BslAgentLoop + RouterPort (Router→LLMPort)
 │       └── cli.py             # harness-loop run / eval / doctor
 └── agents-md/                 # генератор AGENTS.md (зависимостей нет)
@@ -91,7 +91,6 @@ QWEN_API_KEY=... pytest -m live -v            # живой smoke Qwen (судь�
 
 ## Куда расти (по порядку)
 
-1. live-прогон 54 задач с судьёй-независимостью (DeepSeek кодит, Qwen судит; L1+L2-цифры, A/B через `--no-judge-reference`)
-2. рост бенчмарка SWE-bench-BSL (категории под реальные 1С-проекты: НСтр, СКД, HTTP, табличные части)
-3. real-world пилот на одном BSL-проекте (10–20 задач через `harness-loop eval`)
-4. Движок DeepAgents/LangGraph как optional backend на тех же портах (`LLMPort`, `BslVerifier`), текущий цикл остаётся эталоном поведения
+1. live-прогон 70 задач с судьёй-независимостью (DeepSeek кодит, Qwen судит; L1+L2-цифры, A/B через `--no-judge-reference`; срез новых категорий — `--category nstr,http,skd,tablepart`)
+2. real-world пилот на одном BSL-проекте (10–20 задач через `harness-loop eval`)
+3. Движок DeepAgents/LangGraph как optional backend на тех же портах (`LLMPort`, `BslVerifier`), текущий цикл остаётся эталоном поведения

@@ -22,6 +22,13 @@ instead of guessing from the prompt; eval reports carry L2 aggregates
 (judge_mode, approved/vetoed, avg score). The etalon never reaches the
 generator: that would invalidate the benchmark.
 
+v0.6: the benchmark grew towards real 1C projects — 54 -> 70 tasks in
+four new categories (nstr: НСтр + multiline string literals; http:
+HTTPСоединение/HTTPЗапрос patterns; skd: programmatic data composition;
+tablepart: tabular sections via row collections). 15 categories,
+13 easy / 39 medium / 18 hard; every new gold solution is verified by
+the real bsl-language-server (0 Errors) like all the others.
+
 Deliberately framework-free: the loop is a thin orchestrator, fully
 unit-testable with fakes. A future DeepAgents/LangGraph engine would
 consume the same ports, so this code is the reference behaviour, not a
@@ -41,7 +48,7 @@ from .prompt import JUDGE_REFERENCE_SYSTEM_PROMPT, JUDGE_SYSTEM_PROMPT
 from .telemetry import LangfuseTelemetry
 from .types import IterationLog, LoopConfig, LoopResult
 
-__version__ = "0.5.0"
+__version__ = "0.6.0"
 
 __all__ = [
     "BslAgentLoop",
