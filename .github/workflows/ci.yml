@@ -121,12 +121,12 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install packages (dependency order)
+      - name: Install packages (dependency order, dev extras for pytest)
         run: |
           python -m pip install --upgrade pip
           pip install -e "packages/russian-llm-pack"
           pip install -e "packages/bsl-verify"
-          pip install -e "packages/harness-loop"
+          pip install -e "packages/harness-loop[dev]"
 
       - name: Install OneScript engine
         run: |
