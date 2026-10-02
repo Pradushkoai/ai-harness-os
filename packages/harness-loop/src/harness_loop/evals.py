@@ -444,9 +444,25 @@ def _parse_checks(raw_checks, task_id: str, source) -> tuple:
             raise ValueError(
                 f"task {task_id}: check #{index} case_fold must be true/false ({source})"
             )
+        proc = raw.get("proc", False)
+        if not isinstance(proc, bool):
+            raise ValueError(
+                f"task {task_id}: check #{index} proc must be true/false ({source})"
+            )
+        setup = raw.get("setup", "") or ""
+        if not isinstance(setup, str):
+            raise ValueError(
+                f"task {task_id}: check #{index} setup must be a string ({source})"
+            )
         try:
             checks.append(
-                ExecCheck(call=str(raw["call"]), expect=expect, case_fold=case_fold)
+                ExecCheck(
+                    call=str(raw["call"]),
+                    expect=expect,
+                    setup=setup,
+                    case_fold=case_fold,
+                    proc=proc,
+                )
             )
         except ValueError as exc:
             raise ValueError(f"task {task_id}: check #{index}: {exc}") from exc

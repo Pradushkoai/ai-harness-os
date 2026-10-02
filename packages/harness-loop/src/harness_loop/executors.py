@@ -61,17 +61,28 @@ class ExecCheck:
 
     Attributes:
         call: a BSL *expression* (typically a function call with concrete
-            arguments) evaluated against the module under test.
+            arguments) evaluated against the module under test. For
+            procedure tasks (proc=True) it is the procedure invocation
+            statement, and `expect` is whatever the procedure prints.
         expect: the expected Сообщить() output, compared after
             normalization (trailing whitespace / blank trailing lines /
             CRLF are ignored).
+        setup: optional BSL statements (separated by ;) executed right
+            before the call inside the same try block — used to build
+            non-trivial inputs (arrays, tables, structures) that are
+            painful to inline into one expression. Variables persist
+            across checks of one module run.
         case_fold: loose comparison for text-builder tasks (query texts):
             keyword case and whitespace runs do not change the verdict.
+        proc: the call is a procedure (no return value) — the expected
+            output is what the procedure itself prints.
     """
 
     call: str
     expect: str = ""
+    setup: str = ""
     case_fold: bool = False
+    proc: bool = False
 
     def __post_init__(self) -> None:
         if not isinstance(self.call, str) or not self.call.strip():
@@ -80,6 +91,8 @@ class ExecCheck:
             )
         if not isinstance(self.expect, str):
             raise ValueError(f"ExecCheck.expect must be a string, got {self.expect!r}")
+        if not isinstance(self.setup, str):
+            raise ValueError(f"ExecCheck.setup must be a string, got {self.setup!r}")
 
 
 @dataclass(frozen=True)
@@ -157,23 +170,31 @@ def sanitize_env(env: Optional[dict] = None) -> dict:
 def build_driver(module_code: str, checks: list[ExecCheck]) -> str:
     """Wrap a module + checks into one executable OneScript script."""
 
-    blocks = [module_code.rstrip(), ""]
-    blocks.append("// __HARNESS_DRIVER__ — сгенерировано исполнителем L1, не редактировать")
-    blocks.append("")
+    lines = [module_code.rstrip(), ""]
+    lines.append("// __HARNESS_DRIVER__ — сгенерировано исполнителем L1, не редактировать")
+    lines.append("")
     for index, check in enumerate(checks, start=1):
         marker = f"__CHK{index}__"
-        blocks.extend([
-            f"Попытка // {marker}",
-            f"    РезультатВызова = {check.call.strip()};",
-            f"    Сообщить(\"{marker}\");",
-            "    Сообщить(РезультатВызова);",
-            "Исключение",
-            f"    Сообщить(\"{marker}\");",
-            "    Сообщить(\"__ERROR__: \" + ОписаниеОшибки());",
-            "КонецПопытки;",
-            "",
-        ])
-    return "\n".join(blocks).rstrip() + "\n"
+        setup = [
+            "    " + stmt.strip().rstrip(";") + ";"
+            for stmt in check.setup.split(";")
+            if stmt.strip()
+        ]
+        lines.append(f"Попытка // {marker}")
+        lines.extend(setup)
+        if check.proc:
+            lines.append(f"    Сообщить(\"{marker}\");")
+            lines.append(f"    {check.call.strip()};")
+        else:
+            lines.append(f"    РезультатВызова = {check.call.strip()};")
+            lines.append(f"    Сообщить(\"{marker}\");")
+            lines.append("    Сообщить(РезультатВызова);")
+        lines.append("Исключение")
+        lines.append(f"    Сообщить(\"{marker}\");")
+        lines.append("    Сообщить(\"__ERROR__: \" + ОписаниеОшибки());")
+        lines.append("КонецПопытки;")
+        lines.append("")
+    return "\n".join(lines).rstrip() + "\n"
 
 
 def parse_driver_output(stdout: str, check_count: int) -> list[Optional[str]]:
