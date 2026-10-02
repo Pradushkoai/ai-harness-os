@@ -103,3 +103,39 @@ jobs:
 
       - name: CLI smoke
         run: ${{ matrix.package.smoke }}
+
+  # A4 gate (roadmap 2.1): every benchmark task with L1 checks must pass
+  # its own reference solution on the real OneScript engine. Pinned engine
+  # version for reproducibility; ~47MB download, runs in ~90s.
+  l1-gate:
+    runs-on: ubuntu-latest
+    name: L1 oracle gate (OneScript 2.2.0)
+    timeout-minutes: 15
+    env:
+      ONESCRIPT_VERSION: "2.2.0"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install packages (dependency order)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e "packages/russian-llm-pack"
+          pip install -e "packages/bsl-verify"
+          pip install -e "packages/harness-loop"
+
+      - name: Install OneScript engine
+        run: |
+          curl -sL --retry 3             "https://github.com/EvilBeaver/OneScript/releases/download/v${ONESCRIPT_VERSION}/OneScript-${ONESCRIPT_VERSION}-linux-x64.zip"             -o /tmp/oscript.zip
+          unzip -q -o /tmp/oscript.zip -d "$HOME/oscript"
+          chmod +x "$HOME/oscript/bin/oscript"
+          "$HOME/oscript/bin/oscript" -version || true
+
+      - name: Run L1 integration gate
+        working-directory: packages/harness-loop
+        run: |
+          OSCRIPT_PATH="$HOME/oscript/bin/oscript" pytest -m integration tests/test_integration_exec.py -v
