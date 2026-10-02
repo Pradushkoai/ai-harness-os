@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
 from bsl_verify import verifier as verifier_mod
 from bsl_verify.policy import VerifyPolicy
 from bsl_verify.verifier import BslVerifier, collect_bsl_files
-from conftest import MODULE_BROKEN, REAL_REPORT, make_fake_run_analyze
+from conftest import MODULE_BROKEN, make_fake_run_analyze
 
 
 @pytest.fixture
@@ -20,12 +21,18 @@ def verifier(monkeypatch):
 
 
 def staged_report_for(staged_dir: str, filename: str = "module.bsl") -> str:
-    """Build a realistic report whose file path lives in the staging dir."""
+    """Build a realistic report whose file path lives in the staging dir.
+
+    The URI is built with ``Path.as_uri()`` — the canonical form
+    (``file:///C:/Users/...`` on Windows, ``file:///tmp/...`` on POSIX),
+    exactly what bsl-language-server emits. Naive f"file://{dir}" would
+    swallow the Windows drive letter into the netloc.
+    """
 
     return json.dumps({
         "date": "2026-09-30 10:00:00",
         "fileinfos": [{
-            "path": f"file://{staged_dir}/{filename}",
+            "path": f"{Path(staged_dir).as_uri()}/{filename}",
             "diagnostics": [{
                 "code": "ParseError",
                 "severity": "Error",
@@ -112,8 +119,8 @@ class TestVerifyFiles:
         def fake_run(src_dir, **kw):
             return json.dumps({
                 "fileinfos": [
-                    {"path": f"file://{src_dir}/mod.bsl", "diagnostics": []},
-                    {"path": f"file://{src_dir}/0001_mod.bsl", "diagnostics": []},
+                    {"path": f"{Path(src_dir).as_uri()}/mod.bsl", "diagnostics": []},
+                    {"path": f"{Path(src_dir).as_uri()}/0001_mod.bsl", "diagnostics": []},
                 ]
             })
 

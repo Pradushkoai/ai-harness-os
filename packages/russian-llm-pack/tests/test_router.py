@@ -51,7 +51,10 @@ class TestHappyPath:
 
 class TestFallback:
     def test_transient_error_falls_through_after_retries(self):
-        a = FakeProvider("a", script=[ProviderTransientError("boom"), ProviderTransientError("boom"), ProviderTransientError("boom")])
+        a = FakeProvider("a", script=[
+            ProviderTransientError("boom"), ProviderTransientError("boom"),
+            ProviderTransientError("boom"),
+        ])
         b = FakeProvider("b")
         router = make_router({"a": a, "b": b}, retries=2)
         result = router.complete("coding", "hi")
@@ -89,7 +92,10 @@ class TestFallback:
         assert result.provider == "b"
 
     def test_all_chain_exhausted_raises(self):
-        a = FakeProvider("a", script=[ProviderTransientError("x"), ProviderTransientError("x"), ProviderTransientError("x")])
+        a = FakeProvider("a", script=[
+            ProviderTransientError("x"), ProviderTransientError("x"),
+            ProviderTransientError("x"),
+        ])
         router = make_router({"a": a}, chain=["a/m1"], retries=2)
         with pytest.raises(NoAvailableModelError) as excinfo:
             router.complete("coding", "hi")

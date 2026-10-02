@@ -16,21 +16,16 @@ later the harness will forward them to Langfuse — the hook is the seam.
 
 from __future__ import annotations
 
-import time
-from typing import Any, Callable, Iterable, Optional
+from typing import Any, Callable, Optional
 
-from ..providers.registry import PRESETS, build_provider, preset_info
+from ..providers.registry import build_provider, preset_info
 from ..types import (
-    ChatMessage,
     CompletionResult,
     ModelRef,
     NoAvailableModelError,
     ProviderAuthError,
     ProviderError,
-    ProviderRequestError,
     ProviderTransientError,
-    StreamEvent,
-    coerce_messages,
 )
 from .config import RouterConfig
 
@@ -225,7 +220,6 @@ class Router:
         messages: Any,
         kwargs: dict,
     ) -> CompletionResult:
-        started = time.monotonic()
         try:
             result = provider.complete(messages, model=ref.model, **kwargs)
         except ProviderError as exc:

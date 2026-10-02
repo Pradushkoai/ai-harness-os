@@ -51,7 +51,9 @@ def _build_parser() -> argparse.ArgumentParser:
     check.add_argument("--version", action="version", version=f"bsl-check {__version__}")
     check.add_argument("paths", nargs="+", help=".bsl/.os files or directories")
     check.add_argument("--config", default=None, help="bsl-language-server JSON config (-c)")
-    check.add_argument("--max-errors", type=int, default=0, help="policy: allowed errors (default 0)")
+    check.add_argument(
+        "--max-errors", type=int, default=0, help="policy: allowed errors (default 0)"
+    )
     check.add_argument("--max-warnings", type=int, default=None, help="policy: allowed warnings")
     check.add_argument("--ignore", default="", help="comma-separated diagnostic codes to ignore")
     check.add_argument("--only", default="", help="comma-separated codes to count (whitelist)")

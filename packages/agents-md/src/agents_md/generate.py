@@ -25,7 +25,10 @@ from .types import (
 AGENTS_FILENAME = "AGENTS.md"
 
 _KIND_OVERVIEW = {
-    KIND_1C_EDT: "Конфигурация 1С:Предприятие 8.3, разработка в 1C:EDT (формат исходников EDT, .mdo).",
+    KIND_1C_EDT: (
+        "Конфигурация 1С:Предприятие 8.3, разработка в 1C:EDT "
+        "(формат исходников EDT, .mdo)."
+    ),
     KIND_1C_XML: "Конфигурация 1С:Предприятие 8.3, исходники — XML-выгрузка Конфигуратора.",
     KIND_PYTHON: "Проект на Python.",
     KIND_JS_TS: "Проект на JavaScript/TypeScript.",
@@ -104,7 +107,10 @@ def _setup(info: ProjectInfo) -> str:
 
 def _setup_1c(info: ProjectInfo) -> str:
     src = src_dir(info.root, info.kind)
-    src_note = f"Исходники конфигурации: `{src.name}/`." if src else "Исходники конфигурации: см. структуру ниже."
+    if src:
+        src_note = f"Исходники конфигурации: `{src.name}/`."
+    else:
+        src_note = "Исходники конфигурации: см. структуру ниже."
     return f"""## Setup
 
 ### Prerequisites
@@ -113,7 +119,11 @@ def _setup_1c(info: ProjectInfo) -> str:
 - Java 17+ и bsl-language-server.jar (статическая проверка BSL)
 
 ### Импорт конфигурации
-- {'1C:EDT: File → Import → 1C:Enterprise Configuration → From file, выбрать `src/`' if info.kind == KIND_1C_EDT else 'Конфигуратор: Конфигурация → Загрузить конфигурацию из файлов'}
+- {(
+    '1C:EDT: File → Import → 1C:Enterprise Configuration → From file, выбрать `src/`'
+    if info.kind == KIND_1C_EDT
+    else 'Конфигуратор: Конфигурация → Загрузить конфигурацию из файлов'
+)}
 - {src_note}
 
 ### Статическая проверка (обязательно перед коммитом)
@@ -174,7 +184,8 @@ def _code_style(info: ProjectInfo) -> str:
     if info.kind in (KIND_1C_EDT, KIND_1C_XML):
         lines += [
             "- Стандарт разработки: https://its.1c.ru/db/v8std",
-            "- Именование: кириллица, ПаскальКейс (`СоздатьДокумент()`); синонимы — при необходимости",
+            "- Именование: кириллица, ПаскальКейс (`СоздатьДокумент()`); "
+            "синонимы — при необходимости",
             "- Комментарии методов: `// Параметры: ... Возвращаемое значение: ...`",
             "- Области кода: `#Область ... #КонецОбласти`",
             "- Запрещено: устаревшие методы (например, `Сообщить()`), латиница в идентификаторах",
@@ -194,7 +205,7 @@ def _code_style(info: ProjectInfo) -> str:
         lines += ["- Опиши правила стиля вручную."]
 
     if info.linters:
-        lines.append("- Инструменты: " + ", ".join(f"`{l}`" for l in info.linters))
+        lines.append("- Инструменты: " + ", ".join(f"`{tool}`" for tool in info.linters))
         commands = [f"  {name}: `{cmd}`" for name, cmd in _LINT_COMMANDS.items()
                     if name in info.linters]
         if commands:

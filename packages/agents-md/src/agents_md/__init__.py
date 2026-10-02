@@ -20,8 +20,6 @@ from .structure import scan_structure
 from .types import ProjectInfo, StructureEntry
 from .validate import validate_agents_md
 
-__version__ = "0.1.0"
-
 __all__ = [
     "KIND_1C_EDT",
     "KIND_1C_XML",

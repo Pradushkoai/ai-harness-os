@@ -38,7 +38,7 @@ class ProjectInfo:
     test_runner: Optional[str] = None                  # "pytest" | "vitest" | ...
     ci: Optional[str] = None                           # "GitHub Actions" | "GitLab CI"
     docker: bool = False
-    linters: list = field(default_factory=list)        # list[str], e.g. ["ruff", "bsl-language-server"]
+    linters: list = field(default_factory=list)   # list[str], e.g. ["ruff"]
     structure: list = field(default_factory=list)      # list[StructureEntry]
     python_version: Optional[str] = None               # requires-python, if detected
     description: Optional[str] = None                  # from pyproject, if detected

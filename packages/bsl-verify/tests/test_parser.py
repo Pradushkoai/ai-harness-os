@@ -20,7 +20,9 @@ class TestRealReport:
     def test_file_path_decoded_from_uri(self):
         report = parse_report(REAL_REPORT)
         path = report.files[0].path
-        assert path.startswith("/")
+        # OS-agnostic: on Windows the decoded path is "C:\..." (isabs),
+        # on POSIX "/..." (also isabs).
+        assert os.path.isabs(path)
         assert not path.startswith("file://")
         assert path.endswith("sample_broken.bsl")
 
@@ -125,7 +127,9 @@ class TestTolerance:
 
 class TestUriToPath:
     def test_posix(self):
-        assert uri_to_path("file:///home/x/m.bsl") == "/home/x/m.bsl"
+        # On Windows os.path.normpath turns "/home/x/m.bsl" into
+        # "\home\x\m.bsl"; the expectation must follow the OS.
+        assert uri_to_path("file:///home/x/m.bsl") == os.path.normpath("/home/x/m.bsl")
 
     def test_windows_drive(self):
         assert uri_to_path("file:///D:/work/m.bsl").endswith(("D:\\work\\m.bsl", "D:/work/m.bsl"))

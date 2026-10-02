@@ -24,9 +24,15 @@ def make_python_project(tmp: Path) -> Path:
     (root / "conftest.py").write_text("", encoding="utf-8")
     (root / "src" / "my_app" / "__init__.py").write_text("", encoding="utf-8")
     (root / "src" / "my_app" / "main.py").write_text("def run():\n    return 1\n", encoding="utf-8")
-    (root / "src" / "my_app" / "core.py").write_text("def core():\n    return 2\n", encoding="utf-8")
-    (root / "src" / "my_app" / "extra.py").write_text("def extra():\n    return 3\n", encoding="utf-8")
-    (root / "tests" / "test_main.py").write_text("def test_run():\n    assert 1\n", encoding="utf-8")
+    (root / "src" / "my_app" / "core.py").write_text(
+        "def core():\n    return 2\n", encoding="utf-8"
+    )
+    (root / "src" / "my_app" / "extra.py").write_text(
+        "def extra():\n    return 3\n", encoding="utf-8"
+    )
+    (root / "tests" / "test_main.py").write_text(
+        "def test_run():\n    assert 1\n", encoding="utf-8"
+    )
     (root / "Dockerfile").write_text("FROM python:3.12\n", encoding="utf-8")
     (root / ".github" / "workflows").mkdir(parents=True)
     (root / ".github" / "workflows" / "ci.yml").write_text("name: CI\n", encoding="utf-8")
@@ -44,7 +50,9 @@ def make_1c_edt_project(tmp: Path) -> Path:
     (src / "CommonModules" / "МойМодуль" / "МойМодуль.bsl").write_text(
         "Процедура Тест()\nКонецПроцедуры\n", encoding="utf-8"
     )
-    (src / "CommonModules" / "МойМодуль" / "МойМодуль.mdo").write_text("<object/>", encoding="utf-8")
+    (src / "CommonModules" / "МойМодуль" / "МойМодуль.mdo").write_text(
+        "<object/>", encoding="utf-8"
+    )
     (src / "Catalogs" / "Номенклатура" / "Ext").mkdir()
     (src / "Documents" / "ЗаказКлиента" / "Ext").mkdir()
     for i in range(10):

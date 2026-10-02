@@ -101,7 +101,8 @@ class TestOAuthFlow:
             oauth_responder=lambda u, p, h: (200, responses.pop(0))
         )
         adapter = GigaChatAdapter(
-            base_url=BASE, oauth_url=OAUTH, default_model="GigaChat-Pro", auth_key="k", transport=transport
+            base_url=BASE, oauth_url=OAUTH, default_model="GigaChat-Pro",
+            auth_key="k", transport=transport,
         )
         adapter.complete("hi")
         adapter.complete("hi again")
@@ -118,7 +119,8 @@ class TestOAuthFlow:
             oauth_responder=lambda u, p, h: (200, oauth_body("tok-soon", soon))
         )
         adapter = GigaChatAdapter(
-            base_url=BASE, oauth_url=OAUTH, default_model="GigaChat-Pro", auth_key="k", transport=transport
+            base_url=BASE, oauth_url=OAUTH, default_model="GigaChat-Pro",
+            auth_key="k", transport=transport,
         )
         adapter.complete("hi")
         adapter.complete("hi")
@@ -134,7 +136,8 @@ class TestOAuthFlow:
     def test_missing_access_token_in_oauth_response(self):
         transport = FakeTransport(oauth_responder=lambda u, p, h: (200, {}))
         adapter = GigaChatAdapter(
-            base_url=BASE, oauth_url=OAUTH, default_model="GigaChat-Pro", auth_key="k", transport=transport
+            base_url=BASE, oauth_url=OAUTH, default_model="GigaChat-Pro",
+            auth_key="k", transport=transport,
         )
         with pytest.raises(ProviderAuthError, match="access_token"):
             adapter.complete("hi")
@@ -181,7 +184,8 @@ class TestChatRequest:
     def test_empty_choices_raises(self):
         transport = FakeTransport(chat_responder=lambda u, p, h: (200, {}))
         adapter = GigaChatAdapter(
-            base_url=BASE, oauth_url=OAUTH, default_model="GigaChat-Pro", auth_key="k", transport=transport
+            base_url=BASE, oauth_url=OAUTH, default_model="GigaChat-Pro",
+            auth_key="k", transport=transport,
         )
         with pytest.raises(ProviderRequestError, match="no choices"):
             adapter.complete("hi")
@@ -192,7 +196,8 @@ class TestErrorMapping:
     def test_auth_errors(self, status):
         transport = FakeTransport(chat_responder=lambda u, p, h: (status, {}))
         adapter = GigaChatAdapter(
-            base_url=BASE, oauth_url=OAUTH, default_model="GigaChat-Pro", auth_key="k", transport=transport
+            base_url=BASE, oauth_url=OAUTH, default_model="GigaChat-Pro",
+            auth_key="k", transport=transport,
         )
         with pytest.raises(ProviderAuthError):
             adapter.complete("hi")
@@ -201,7 +206,8 @@ class TestErrorMapping:
     def test_transient_errors(self, status):
         transport = FakeTransport(chat_responder=lambda u, p, h: (status, {}))
         adapter = GigaChatAdapter(
-            base_url=BASE, oauth_url=OAUTH, default_model="GigaChat-Pro", auth_key="k", transport=transport
+            base_url=BASE, oauth_url=OAUTH, default_model="GigaChat-Pro",
+            auth_key="k", transport=transport,
         )
         with pytest.raises(ProviderTransientError):
             adapter.complete("hi")
@@ -210,7 +216,10 @@ class TestErrorMapping:
         def boom(url, payload, headers, timeout):
             raise TransportError("cert", "CERTIFICATE_VERIFY_FAILED")
 
-        adapter = GigaChatAdapter(base_url=BASE, oauth_url=OAUTH, default_model="GigaChat-Pro", auth_key="k", transport=boom)
+        adapter = GigaChatAdapter(
+            base_url=BASE, oauth_url=OAUTH, default_model="GigaChat-Pro",
+            auth_key="k", transport=boom,
+        )
         with pytest.raises(ProviderRequestError) as excinfo:
             adapter.complete("hi")
         assert "GIGACHAT_CA_BUNDLE" in str(excinfo.value)
@@ -220,7 +229,10 @@ class TestErrorMapping:
         def boom(url, payload, headers, timeout):
             raise TransportError("network", "timeout")
 
-        adapter = GigaChatAdapter(base_url=BASE, oauth_url=OAUTH, default_model="GigaChat-Pro", auth_key="k", transport=boom)
+        adapter = GigaChatAdapter(
+            base_url=BASE, oauth_url=OAUTH, default_model="GigaChat-Pro",
+            auth_key="k", transport=boom,
+        )
         with pytest.raises(ProviderTransientError):
             adapter.complete("hi")
 

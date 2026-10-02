@@ -27,7 +27,8 @@ JAR_CONVENTIONAL_DIR = ".bsl-language-server"
 JAR_FILENAME = "bsl-language-server.jar"
 REPORT_FILENAME = "bsl-json.json"
 
-# subprocess.run substitute injected by tests: (cmd, timeout, capture_output, env?) -> CompletedProcess-like
+# subprocess.run substitute injected by tests:
+# (cmd, timeout, capture_output, env?) -> CompletedProcess-like
 Runner = Callable[..., SimpleNamespace]
 
 

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 
 from agents_md import generate_agents_md, validate_agents_md
 from agents_md.detect import detect_project

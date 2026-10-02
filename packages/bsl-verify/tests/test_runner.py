@@ -5,6 +5,7 @@ All subprocess calls are faked — no java, no jar, no network.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -49,7 +50,10 @@ class TestFindJava:
         monkeypatch.delenv("BSL_JAVA", raising=False)
         home = tmp_path / "jdk"
         (home / "bin").mkdir(parents=True)
-        exe = home / "bin" / "java"
+        # find_java() looks for java.exe on Windows, plain java elsewhere;
+        # the fixture must follow the same rule (code is right, test was
+        # written for Linux only).
+        exe = home / "bin" / ("java.exe" if os.name == "nt" else "java")
         exe.write_text("x")
         monkeypatch.setenv("JAVA_HOME", str(home))
         assert find_java() == str(exe)

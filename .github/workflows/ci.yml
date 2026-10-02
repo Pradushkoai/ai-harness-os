@@ -6,6 +6,23 @@ on:
   pull_request:
 
 jobs:
+  ruff:
+    runs-on: ubuntu-latest
+    name: ruff (E4,E7,E9,F,E501 @ 100)
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install ruff
+        run: pip install ruff
+
+      - name: Ruff check (repo rule: ruff-compatible, line length 100)
+        run: ruff check --select E4,E7,E9,F,E501 --line-length 100 packages/
+
   test:
     runs-on: ubuntu-latest
     strategy:
@@ -29,6 +46,48 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+
+      - name: Install all packages (dependency order) with dev extras
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e "packages/russian-llm-pack[dev]"
+          pip install -e "packages/bsl-verify[dev]"
+          pip install -e "packages/harness-loop[dev]"
+          pip install -e "packages/agents-md[dev]"
+
+      - name: Run unit tests (no network, no java, no keys)
+        working-directory: packages/${{ matrix.package.name }}
+        run: pytest -q
+
+      - name: CLI smoke
+        run: ${{ matrix.package.smoke }}
+
+  # Windows is a first-class platform: it is the primary dev/pilot OS for
+  # 1C projects. One Python version per package is enough to catch the
+  # POSIX-assumption class of test bugs (path separators, java.exe lookup,
+  # file:// URI construction) — the full version matrix stays on ubuntu.
+  test-windows:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package:
+          - name: russian-llm-pack
+            smoke: "rlp --version"
+          - name: bsl-verify
+            smoke: "bsl-check --version"
+          - name: harness-loop
+            smoke: "harness-loop --version"
+          - name: agents-md
+            smoke: "agents-md --version"
+    name: windows / ${{ matrix.package.name }} / py3.14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
 
       - name: Install all packages (dependency order) with dev extras
         run: |
