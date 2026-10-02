@@ -28,6 +28,7 @@ from russian_llm_pack import RLLError, Router, RouterConfig, load_config
 
 from . import __version__
 from .evals import bundled_tasks_path, load_tasks, run_eval
+from .executors import OneScriptRunner
 from .judge import Judge, JudgeConfig
 from .loop import BslAgentLoop, RouterPort
 from .telemetry import telemetry_from_env
@@ -101,6 +102,8 @@ def _build_parser() -> argparse.ArgumentParser:
     ev.add_argument("--temperature", type=float, default=None)
     ev.add_argument("--max-tokens", type=int, default=None)
     ev.add_argument("--judge", action="store_true", help="enable the LLM judge")
+    ev.add_argument("--no-exec", action="store_true",
+                    help="skip the L1 execution oracle (auto-discovered OneScript)")
     ev.add_argument("--judge-chain", default=None, help="router chain for the judge LLM")
     ev.add_argument("--judge-model", default=None, help="explicit 'provider/model' for the judge")
     ev.add_argument(
@@ -302,6 +305,16 @@ def _run_eval(args: argparse.Namespace) -> int:
     telemetry = telemetry_from_env() if getattr(args, "langfuse", False) else None
     loop = BslAgentLoop(llm=llm, verifier=verifier, config=config, judge=judge)
 
+    executor = None
+    if not getattr(args, "no_exec", False):
+        executor = OneScriptRunner.discover()
+        if executor is None and any(t.checks for t in tasks):
+            print(
+                "note: L1 оракул не запущен — OneScript не найден "
+                "(OSCRIPT_PATH / PATH / OSCRIPT_HOME); уровень L1 не измерялся",
+                file=sys.stderr,
+            )
+
     def _on_task(outcome) -> None:
         if telemetry is not None:
             for iteration in outcome.result.iterations:
@@ -316,7 +329,11 @@ def _run_eval(args: argparse.Namespace) -> int:
         )
 
     report = run_eval(
-        tasks, loop, on_task=_on_task, use_reference=not args.no_judge_reference
+        tasks,
+        loop,
+        on_task=_on_task,
+        use_reference=not args.no_judge_reference,
+        executor=executor,
     )
 
     if telemetry is not None:
@@ -385,6 +402,14 @@ def _run_doctor(args: argparse.Namespace) -> int:
         problems += 1
         print("  jar:      NOT FOUND — set BSL_LS_JAR or copy to "
               "~/.bsl-language-server/bsl-language-server.jar")
+
+    print("L1 executor (harness-loop, optional):")
+    runner = OneScriptRunner.discover()
+    if runner is not None:
+        print(f"  oscript:  {runner._binary}")
+    else:
+        print("  oscript:  NOT FOUND — L1 не измеряется (L0+L2 работают); "
+              "установи OneScript или укажи OSCRIPT_PATH")
 
     print("Telemetry (optional):")
     import os

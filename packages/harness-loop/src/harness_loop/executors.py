@@ -75,7 +75,9 @@ class ExecCheck:
 
     def __post_init__(self) -> None:
         if not isinstance(self.call, str) or not self.call.strip():
-            raise ValueError(f"ExecCheck.call must be a non-empty BSL expression, got {self.call!r}")
+            raise ValueError(
+                f"ExecCheck.call must be a non-empty BSL expression, got {self.call!r}"
+            )
         if not isinstance(self.expect, str):
             raise ValueError(f"ExecCheck.expect must be a string, got {self.expect!r}")
 
