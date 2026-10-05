@@ -210,3 +210,107 @@ class TestOutcomeFromStdout:
         outcome = runner._outcome_from_stdout("модуль умер", checks, 1.0)
         assert outcome.passed is False
         assert "маркер" in outcome.results[0].error
+
+
+class TestHttpStub:
+    """Loopback stub server + driver prelude (http_stub checks)."""
+
+    def test_driver_gets_port_prelude_when_server_port_given(self):
+        checks = [ExecCheck(call="Ф()", expect="1", http_stub=True)]
+        driver = build_driver("Функция Ф()\n    Возврат 1;\nКонецФункции", checks, server_port=8099)
+        assert "ПортСервера = 8099;" in driver
+
+    def test_driver_without_server_port_has_no_prelude(self):
+        checks = [ExecCheck(call="Ф()", expect="1")]
+        driver = build_driver("Функция Ф()\n    Возврат 1;\nКонецФункции", checks)
+        assert "ПортСервера" not in driver
+
+    def test_stub_routes_fixed_bodies_and_404(self):
+        import urllib.request
+        import urllib.error
+
+        from harness_loop.executors import StubHttpServer
+
+        with StubHttpServer() as stub:
+            base = f"http://127.0.0.1:{stub.port}"
+            assert urllib.request.urlopen(base + "/").read().decode() == "root-ok"
+            assert urllib.request.urlopen(base + "/data").read().decode() == "payload-42"
+            with pytest.raises(urllib.error.HTTPError) as err:
+                urllib.request.urlopen(base + "/missing")
+            assert err.value.code == 404
+            with pytest.raises(urllib.error.HTTPError) as unknown:
+                urllib.request.urlopen(base + "/nope")
+            assert unknown.value.code == 404
+
+    def test_stub_flaky_drops_first_two_then_recovers(self):
+        import urllib.request
+
+        from harness_loop.executors import StubHttpServer
+
+        with StubHttpServer() as stub:
+            url = f"http://127.0.0.1:{stub.port}/flaky"
+            drops = 0
+            for _ in range(2):
+                try:
+                    urllib.request.urlopen(url, timeout=5).read()
+                except Exception:
+                    drops += 1  # connection reset/empty response — the client failure path
+            assert drops == 2
+            # from hit 3 the route recovers with the fixed body
+            assert urllib.request.urlopen(url, timeout=5).read().decode() == "recovered-ok"
+
+    def test_two_stubs_do_not_share_flaky_state(self):
+        import urllib.request
+
+        from harness_loop.executors import StubHttpServer
+
+        first = StubHttpServer()
+        try:
+            url = f"http://127.0.0.1:{first.port}/flaky"
+            try:
+                urllib.request.urlopen(url, timeout=5).read()
+            except Exception:
+                pass  # drop #1 consumed
+        finally:
+            first.close()
+        # a fresh server starts its hit counter from zero
+        with StubHttpServer() as second:
+            url = f"http://127.0.0.1:{second.port}/flaky"
+            drops = 0
+            for _ in range(2):
+                try:
+                    urllib.request.urlopen(url, timeout=5).read()
+                except Exception:
+                    drops += 1
+            assert drops == 2
+
+    def test_run_checks_starts_stub_only_for_http_checks(self, monkeypatch):
+        import harness_loop.executors as ex
+
+        started = []
+
+        class _SpyStub:
+            def __init__(self):
+                started.append(1)
+                self.port = 12345
+
+            def close(self):
+                pass
+
+        monkeypatch.setattr(ex, "StubHttpServer", _SpyStub)
+
+        def fake_run(*args, **kwargs):
+            raise FileNotFoundError("no engine on this machine")
+
+        monkeypatch.setattr(ex.subprocess, "run", fake_run)
+        runner = OneScriptRunner.__new__(OneScriptRunner)
+        runner._binary = "oscript"
+        runner._timeout = 15.0
+
+        # no http_stub checks -> the stub server is never constructed
+        runner.run_checks("Функция Ф()\nКонецФункции", [ExecCheck(call="Ф()", expect="1")])
+        assert started == []
+        # an http_stub check -> the stub is constructed (and closed in finally)
+        http_probe = ExecCheck(call="Ф()", expect="1", http_stub=True)
+        runner.run_checks("Функция Ф()\nКонецФункции", [http_probe])
+        assert started == [1]

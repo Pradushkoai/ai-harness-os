@@ -33,6 +33,14 @@ The marker line makes the parser robust to noisy modules: a generated
 module may print anything, but each check's value is "the lines between
 its marker and the next marker". A runtime error in the check expression
 is reported as __ERROR__ and fails that check — the run continues.
+
+HTTP checks (http_stub=True, roadmap 2.1 phase A): the runner starts a
+loopback stub server for the whole module run and injects its port as
+the ПортСервера driver variable — setup statements address it as
+Новый HTTPСоединение("127.0.0.1", ПортСервера). Routes: / and /data ->
+200 with a fixed body, /missing -> 404, /flaky -> drops the first two
+connections (client exception path) and then answers 200. No external
+hosts are ever contacted.
 """
 
 from __future__ import annotations
@@ -42,7 +50,9 @@ import re
 import shutil
 import subprocess
 import tempfile
+import threading
 import time
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, Protocol, runtime_checkable
@@ -76,6 +86,12 @@ class ExecCheck:
             keyword case and whitespace runs do not change the verdict.
         proc: the call is a procedure (no return value) — the expected
             output is what the procedure itself prints.
+        http_stub: the check talks HTTP to a local stub server started by
+            the runner for the whole module run (roadmap 2.1, phase A:
+            network tasks get a live L1 oracle without external hosts).
+            The driver receives the server port as the ПортСервера
+            variable; checks use it in setup (e.g.
+            `Новый HTTPСоединение("127.0.0.1", ПортСервера)`).
     """
 
     call: str
@@ -83,6 +99,7 @@ class ExecCheck:
     setup: str = ""
     case_fold: bool = False
     proc: bool = False
+    http_stub: bool = False
 
     def __post_init__(self) -> None:
         if not isinstance(self.call, str) or not self.call.strip():
@@ -167,11 +184,94 @@ def sanitize_env(env: Optional[dict] = None) -> dict:
     return {k: v for k, v in source.items() if not _SECRET_ENV.search(k)}
 
 
-def build_driver(module_code: str, checks: list[ExecCheck]) -> str:
-    """Wrap a module + checks into one executable OneScript script."""
+# Deterministic responses of the L1 HTTP stub (roadmap 2.1, phase A).
+# Content is intentionally boring and ASCII-only: expect values in the
+# benchmark capture it verbatim.
+_STUB_ROUTES: dict = {
+    "/": "root-ok",
+    "/data": "payload-42",
+    "/flaky": "recovered-ok",
+}
+_STUB_DROP_FIRST_N = 2  # /flaky drops this many connections, then recovers
+
+
+def _make_stub_handler(hits: dict) -> type:
+    """Build a BaseHTTPRequestHandler closed over a per-run `hits` counter.
+
+    A fresh handler class per server keeps the flaky-route state scoped to
+    one module run — the 59-task gate must not leak hits between modules.
+    """
+
+    class _Handler(BaseHTTPRequestHandler):
+        def log_message(self, *args) -> None:  # silence the test output
+            return
+
+        def do_GET(self) -> None:
+            hits[self.path] = hits.get(self.path, 0) + 1
+            if self.path == "/flaky" and hits[self.path] <= _STUB_DROP_FIRST_N:
+                # Abrupt close, no bytes written: the client sees a
+                # connection-level failure — exactly what retry tasks need.
+                self.connection.close()
+                return
+            if self.path == "/missing" or self.path not in _STUB_ROUTES:
+                self.send_response(404)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+            body = _STUB_ROUTES[self.path].encode("ascii")
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+    return _Handler
+
+
+class StubHttpServer:
+    """Loopback HTTP stub for http_stub checks (no external hosts).
+
+    Routes: `/` and `/data` -> 200 with a fixed body; `/missing` and any
+    unknown path -> 404; `/flaky` -> drops the first two connections
+    (forcing the client's exception path) and then answers 200. Binds to
+    127.0.0.1 on an ephemeral port; serves from a daemon thread; must be
+    closed by the owner (context manager)."""
+
+    def __init__(self) -> None:
+        self._hits: dict = {}
+        self._httpd = HTTPServer(("127.0.0.1", 0), _make_stub_handler(self._hits))
+        self._thread = threading.Thread(target=self._httpd.serve_forever, daemon=True)
+        self._thread.start()
+
+    @property
+    def port(self) -> int:
+        return self._httpd.server_address[1]
+
+    def close(self) -> None:
+        self._httpd.shutdown()
+        self._httpd.server_close()
+        self._thread.join(timeout=5)
+
+    def __enter__(self) -> "StubHttpServer":
+        return self
+
+    def __exit__(self, *exc) -> None:
+        self.close()
+
+
+def build_driver(
+    module_code: str, checks: list[ExecCheck], server_port: Optional[int] = None
+) -> str:
+    """Wrap a module + checks into one executable OneScript script.
+
+    When `server_port` is given (any check with http_stub=True), a
+    `ПортСервера = N;` prelude is injected right after the module code —
+    the only sanctioned way for checks to learn the stub server address.
+    """
 
     lines = [module_code.rstrip(), ""]
     lines.append("// __HARNESS_DRIVER__ — сгенерировано исполнителем L1, не редактировать")
+    if server_port is not None:
+        lines.append(f"ПортСервера = {server_port}; // порт локального стаб-сервера исполнителя L1")
     lines.append("")
     for index, check in enumerate(checks, start=1):
         marker = f"__CHK{index}__"
@@ -336,7 +436,21 @@ class OneScriptRunner:
     ) -> ExecOutcome:
         if not checks:
             return ExecOutcome(ran=True, engine=self.name, passed=True, results=[])
-        script = build_driver(module_code, checks)
+        stub = StubHttpServer() if any(c.http_stub for c in checks) else None
+        try:
+            return self._run_with_stub(module_code, checks, timeout, stub)
+        finally:
+            if stub is not None:
+                stub.close()
+
+    def _run_with_stub(
+        self,
+        module_code: str,
+        checks: list[ExecCheck],
+        timeout: float,
+        stub: Optional[StubHttpServer],
+    ) -> ExecOutcome:
+        script = build_driver(module_code, checks, server_port=stub.port if stub else None)
         workdir = tempfile.mkdtemp(prefix="harness-l1-")
         script_path = Path(workdir) / "driver.os"
         script_path.write_text(script, encoding="utf-8")

@@ -449,6 +449,11 @@ def _parse_checks(raw_checks, task_id: str, source) -> tuple:
             raise ValueError(
                 f"task {task_id}: check #{index} proc must be true/false ({source})"
             )
+        http_stub = raw.get("http_stub", False)
+        if not isinstance(http_stub, bool):
+            raise ValueError(
+                f"task {task_id}: check #{index} http_stub must be true/false ({source})"
+            )
         setup = raw.get("setup", "") or ""
         if not isinstance(setup, str):
             raise ValueError(
@@ -462,6 +467,7 @@ def _parse_checks(raw_checks, task_id: str, source) -> tuple:
                     setup=setup,
                     case_fold=case_fold,
                     proc=proc,
+                    http_stub=http_stub,
                 )
             )
         except ValueError as exc:
