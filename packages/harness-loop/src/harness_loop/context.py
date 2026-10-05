@@ -144,8 +144,11 @@ class BuiltInIndexer:
             key=lambda m: (-m.score, m.path),
         )
 
+        # header carries the project NAME, not the absolute path: paths differ
+        # wildly across platforms (C:\\Users\\... vs /tmp/...) and would make
+        # the token budget platform-dependent; module paths are root-relative
         lines = [
-            f"== контекст проекта {root} (индексер builtin: "
+            f"== контекст проекта {root.name} (индексер builtin: "
             f"{len(modules)} модулей просканировано, отобрано топ до бюджета ~{budget} токенов) =="
         ]
         selected = 0
@@ -192,7 +195,10 @@ class BuiltInIndexer:
                 for kind, name, params, exported in matches
             )
             metadata = tuple(dict.fromkeys(_META_RE.findall(head)))[:_MAX_METADATA_PER_MODULE]
-            found.append(_ModuleInfo(str(path), signatures, metadata))
+            # root-relative, forward slashes — readable for the LLM and
+            # independent of where the project happens to live
+            relative = path.relative_to(root).as_posix()
+            found.append(_ModuleInfo(relative, signatures, metadata))
         return found
 
     @staticmethod
