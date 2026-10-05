@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -111,6 +112,25 @@ class TestLoadTasks:
         assert "HTTPСоединение" in tasks["proc-http-get"].reference
         assert "КомпоновщикМакетаКомпоновкиДанных" in tasks["func-skd-composite-table"].reference
         assert "ЗаполнитьЗначенияСвойств" in tasks["proc-tp-clear-and-fill"].reference
+
+    def test_bundled_reference_avoids_multichar_strsplit(self):
+        """OneScript 2.2.0 СтрРазделить splits by EVERY separator character,
+        not by the substring (1C splits by the whole separator).
+
+        A reference with a multi-char separator encodes the engine quirk
+        instead of 1C semantics, and checks validated against such a
+        reference punish candidates with correct 1C code — caught live in
+        the judge run of 2026-10-05 (func-http-url-parts: port 8080 was
+        expected as 80 because the quirky reference lost ":8080").
+        """
+
+        tasks = load_tasks(bundled_tasks_path())
+        offenders = [
+            t.id
+            for t in tasks
+            if re.search(r'СтрРазделить\([^)]*,\s*"[^"\s][^"]+"', t.reference)
+        ]
+        assert offenders == []
 
     def test_bundled_difficulty_values_valid(self):
         tasks = load_tasks(bundled_tasks_path())

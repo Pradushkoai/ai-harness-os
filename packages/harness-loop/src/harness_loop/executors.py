@@ -41,6 +41,20 @@ the ПортСервера driver variable — setup statements address it as
 200 with a fixed body, /missing -> 404, /flaky -> drops the first two
 connections (client exception path) and then answers 200. No external
 hosts are ever contacted.
+
+OneScript quirks vs 1C (platform differences the oracle must respect,
+rule "reality > assumptions"):
+    - СтрРазделить (OneScript 2.2.0) splits by EVERY CHARACTER of the
+      separator argument, not by the substring (1C semantics). A
+      multi-char separator like "://" silently changes task behaviour:
+      "http://host:8080/path" over "://" yields ["http","host","8080",
+      "path"] instead of 1C's ["http","host:8080/path"]. Task references
+      must therefore avoid multi-char СтрРазделить separators and use
+      СтрНайти/Сред instead (fixed in func-http-url-parts after a live
+      judge run caught it: candidates with correct 1C semantics failed
+      the check while the quirky reference passed).
+    - Struct iteration yields КлючИЗначение (OneScript) vs the key string
+      (1C) — see the struct-merge/struct-to-map L0+L2-only decision.
 """
 
 from __future__ import annotations
