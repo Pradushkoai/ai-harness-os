@@ -47,6 +47,7 @@ import yaml
 
 from .executors import ExecCheck, ExecOutcome, ExecutorPort
 from .loop import BslAgentLoop
+from .prompt import ONESCRIPT_ENGINE_NOTE
 from .types import LoopResult
 
 BUNDLED_TASKS = Path(__file__).parent / "eval_data" / "tasks_v0.yaml"
@@ -542,7 +543,16 @@ def run_eval(
     outcomes: list[TaskOutcome] = []
     for task in tasks:
         reference = task.reference if use_reference else ""
-        result = loop.run(task.prompt, context=task.context, reference=reference)
+        # Environment note for tasks the L1 oracle will actually execute:
+        # the generator must know the target engine (OneScript, not the 1C
+        # platform) — same knowledge a real developer has about the target.
+        # Tasks without checks never reach execution, so they stay untouched.
+        context = task.context
+        if executor_ready and task.checks:
+            context = "\n\n".join(
+                part for part in (ONESCRIPT_ENGINE_NOTE, context) if part
+            )
+        result = loop.run(task.prompt, context=context, reference=reference)
         exec_outcome = None
         if executor_ready and task.checks:
             exec_outcome = executor.run_checks(result.code, list(task.checks))

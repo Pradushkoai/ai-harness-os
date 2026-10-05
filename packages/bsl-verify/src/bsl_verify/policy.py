@@ -13,6 +13,19 @@ from typing import Iterable, Optional
 from .types import FileReport, Severity
 
 
+# Diagnostic codes that bsl-language-server reports as ERROR while the 1C
+# platform (and OneScript) happily execute the code. Empirically confirmed
+# on the UT 11 real-config pilot (2026-10-05):
+#   InvalidCharacterInFile — raised on non-ASCII punctuation inside comments
+#   (em-dash U+2014 etc.): a three-year-old config comment style that the
+#   engine runs without a single complaint burned 3 loop iterations on a
+#   non-problem. The harness keeps the code visible to the report but does
+#   not let it fail the gate.
+# The set is knowledge, not a default: import it where the loop policy is
+# built (harness-loop merges it into --ignore unless --strict-verify).
+LS_FALSE_POSITIVE_CODES: frozenset = frozenset({"InvalidCharacterInFile"})
+
+
 @dataclass(frozen=True)
 class VerifyPolicy:
     """Gate rules applied to a verification result.

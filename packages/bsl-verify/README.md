@@ -109,6 +109,19 @@ BslVerifier.verify_module_text(text)      ← сценарий agent loop
 - `verify_dir()` анализирует директорию как есть.
 - Парсер устойчив к эволюции формата: отсутствующие поля, вариации severity, `file://` URI с Windows-дисками — не роняют проверку.
 
+### Ложные срабатывания LS (проверено пилотом)
+
+`bsl_verify.LS_FALSE_POSITIVE_CODES` — экспортируемый набор кодов, которые
+bsl-language-server выдаёт как ERROR, а рантайм (1С и OneScript) исполняет без
+жалоб. Сегодня в наборе `InvalidCharacterInFile`: не-ASCII пунктуация в
+комментариях (em-dash и т.п.). Пилот на реальной конфигурации УТ 11 сжёг
+3 итерации цикла на эту несуществующую проблему.
+
+Набор — знание, а не дефолт: `VerifyPolicy` сам по себе не изменился.
+Потребители цикла (harness-loop `--ignore`-мерж, harness-mcp) подключают
+набор сами; `harness-loop --strict-verify` / `HARNESS_STRICT_VERIFY=1`
+возвращают сырой LS-вердикт.
+
 ## Разработка
 
 ```bash

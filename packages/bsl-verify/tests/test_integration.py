@@ -13,7 +13,7 @@ import shutil
 
 import pytest
 
-from bsl_verify.policy import VerifyPolicy
+from bsl_verify.policy import LS_FALSE_POSITIVE_CODES, VerifyPolicy
 from bsl_verify.types import Severity
 from bsl_verify.verifier import BslVerifier
 from conftest import MODULE_BROKEN, MODULE_OK
@@ -87,3 +87,39 @@ class TestRealAnalysis:
         assert severities  # non-empty
         assert all(isinstance(s, Severity) for s in severities)
         assert Severity.ERROR in severities
+
+
+class TestLSFalsePositives:
+    """The UT 11 pilot case: em-dash in comments — ERROR for LS, fine for engines."""
+
+    EMDASH_MODULE = (
+        "// Расчёт остатков — реализация УТ 11 (em-dash U+2014 в комментарии)\n"
+        "// Период — квартал, склад — основной.\n"
+        "Функция Сумма(А, Б)\n"
+        "    Возврат А + Б;\n"
+        "КонецФункции\n"
+    )
+
+    def test_raw_policy_fails_on_em_dash(self, verifier):
+        raw = BslVerifier(policy=VerifyPolicy(), timeout_s=300.0)
+        result = raw.verify_module_text(self.EMDASH_MODULE)
+        assert result.passed is False
+        codes = [d.code for report in result.files for d in report.diagnostics]
+        assert codes.count("InvalidCharacterInFile") >= 1
+
+    def test_false_positive_policy_passes_on_em_dash(self, verifier):
+        fixed = BslVerifier(
+            policy=VerifyPolicy(ignore_codes=LS_FALSE_POSITIVE_CODES),
+            timeout_s=300.0,
+        )
+        result = fixed.verify_module_text(self.EMDASH_MODULE)
+        assert result.passed is True
+        assert result.errors == 0
+
+    def test_false_positive_policy_still_catches_parse_error(self, verifier):
+        fixed = BslVerifier(
+            policy=VerifyPolicy(ignore_codes=LS_FALSE_POSITIVE_CODES),
+            timeout_s=300.0,
+        )
+        result = fixed.verify_module_text(MODULE_BROKEN)
+        assert result.passed is False

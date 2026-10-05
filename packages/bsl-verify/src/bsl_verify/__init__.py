@@ -18,7 +18,7 @@ v1.0.7, `analyze -r json`):
 Pure stdlib. No network. No secrets.
 """
 
-from .policy import VerifyPolicy
+from .policy import LS_FALSE_POSITIVE_CODES, VerifyPolicy
 from .types import (
     BslVerifyError,
     Diagnostic,
@@ -31,7 +31,7 @@ from .types import (
 )
 from .verifier import BslVerifier
 
-__version__ = "0.1.1"
+__version__ = "0.1.2"
 
 __all__ = [
     "BslVerifyError",
@@ -39,6 +39,7 @@ __all__ = [
     "Diagnostic",
     "FileMetrics",
     "FileReport",
+    "LS_FALSE_POSITIVE_CODES",
     "Position",
     "Range",
     "Severity",

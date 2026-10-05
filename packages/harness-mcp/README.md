@@ -97,6 +97,7 @@ russian-llm-pack, без OneScript отключается только L1-ора
 | `BSL_JAVA_PATH` | java для bsl-language-server | PATH |
 | `BSL_JAR_PATH` | jar bsl-language-server | дискавери |
 | `OSCRIPT_PATH` | движок OneScript для L1-оракула | PATH / `OSCRIPT_HOME` |
+| `HARNESS_STRICT_VERIFY` | `1` = верификатор не игнорирует LS-ложные срабатывания (`InvalidCharacterInFile`, em-dash в комментариях) | не задан |
 
 Секреты никогда не попадают в YAML и на провод — только имена env-переменных
 (правило репозитория №1).

@@ -28,7 +28,7 @@ from typing import Callable, Optional
 import bsl_verify
 import harness_loop
 import russian_llm_pack
-from bsl_verify import BslVerifyError, BslVerifier
+from bsl_verify import BslVerifyError, BslVerifier, LS_FALSE_POSITIVE_CODES, VerifyPolicy
 from harness_loop import BslAgentLoop, LoopConfig
 from harness_loop.evals import bundled_tasks_path, load_tasks, run_eval
 from harness_loop.executors import OneScriptRunner
@@ -129,9 +129,18 @@ class HarnessServices:
         return load_tasks(bundled_tasks_path())
 
     def _build_real_verifier(self) -> BslVerifier:
+        # Same default policy as harness-loop CLI: LS errors that the engine
+        # runs fine (em-dash in comments -> InvalidCharacterInFile, see the
+        # UT 11 pilot) do not fail the gate. HARNESS_STRICT_VERIFY=1 keeps
+        # the raw LS verdict for tooling that wants zero tolerance.
+        if os.environ.get("HARNESS_STRICT_VERIFY") == "1":
+            policy = VerifyPolicy()
+        else:
+            policy = VerifyPolicy(ignore_codes=LS_FALSE_POSITIVE_CODES)
         return BslVerifier(
             java=os.environ.get("BSL_JAVA_PATH") or None,
             jar=os.environ.get("BSL_JAR_PATH") or None,
+            policy=policy,
         )
 
     def _build_real_loop(self, project_path: str = "") -> BslAgentLoop:

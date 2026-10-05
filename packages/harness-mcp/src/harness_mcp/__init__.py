@@ -16,7 +16,7 @@ from .server import HarnessMcpServer, main, serve
 from .state import SessionState
 from .tools import HarnessServices, ToolDescriptor, ToolOutcome, build_registry
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 __all__ = [
     "HarnessMcpServer",

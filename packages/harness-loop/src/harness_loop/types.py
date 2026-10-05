@@ -67,6 +67,8 @@ class IterationLog:
     judge_verdict: Optional[bool] = None  # True pass / False fail / None not run
     judge_issues: list = field(default_factory=list)  # list[str], capped
     judge_ms: float = 0.0
+    judge_samples: int = 0  # self-consistency votes (0 = judge not run here)
+    judge_agreement: float = 0.0  # share of votes behind the verdict (1.0 unanimous)
     context_source: str = ""  # builtin | mcp — who filled the context (phase C)
     context_tokens: int = 0  # its size, for observability
 
@@ -89,6 +91,8 @@ class IterationLog:
             "judge_verdict": self.judge_verdict,
             "judge_issues": list(self.judge_issues),
             "judge_ms": round(self.judge_ms, 1),
+            "judge_samples": self.judge_samples,
+            "judge_agreement": round(self.judge_agreement, 2),
             "context_source": self.context_source,
             "context_tokens": self.context_tokens,
         }

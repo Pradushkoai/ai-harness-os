@@ -29,6 +29,35 @@ SYSTEM_PROMPT = (
 )
 
 
+# Prepended to the task context when the L1 oracle is going to EXECUTE the
+# generated module on vanilla OneScript (run_eval with a ready executor).
+# This is environment knowledge — the same thing a real 1C developer knows
+# about the target platform — NOT a benchmark leak: the reference stays
+# judge-only. Every line below is confirmed by a live probe / pilot:
+#   - СтрРазделить multi-char quirk: confirmed 2026-10-04 (edc0648) —
+#     oscript splits by EVERY character of the separator string;
+#   - ДобавитьКДате/ПериодСтр/ПредставлениеПериода/ЧислоПрописью absent
+#     from vanilla OneScript 2.2.0: confirmed by live probes 2026-10-05
+#     (Symbol not found); the E1 pilot burned a whole task on ДобавитьКДате
+#     (L0 clean, judge 9/10, L1 the only level that caught it).
+ONESCRIPT_ENGINE_NOTE = (
+    "Среда исполнения (L1-оракул): движок OneScript 2.2.0 (oscript), "
+    "не платформа 1С. Подтверждённые расхождения:\n"
+    "- СтрРазделить(Строка, Разделитель) делит по КАЖДОМУ символу "
+    "строки-разделителя, а не по подстроке (в 1С — по подстроке). "
+    "Для многосимвольных разделителей используй односимвольный вариант, "
+    "СтрНайти/Сред или СтрЗаменить;\n"
+    "- Следующих функций 1С в vanilla OneScript НЕТ (Symbol not found): "
+    "ДобавитьКДате, ПериодСтр, ПредставлениеПериода, ЧислоПрописью. "
+    "Заменяй базовыми средствами: арифметика дат через конструктор Дата() "
+    "и секунды, периоды — вычислением границ, суммы прописью — только если "
+    "задача не требует именно ЧислоПрописью;\n"
+    "- Есть и работают как в 1С: НачалоМесяца/КонецМесяца и остальные "
+    "функции границ периодов, НеделяГода, ДеньГода, ДеньНедели, Формат, "
+    "НСтр, СтрШаблон, Вычислить и весь базовый строковый набор."
+)
+
+
 def task_prompt(task: str, context: str = "") -> str:
     """Initial user prompt: the task (+ optional project context)."""
 

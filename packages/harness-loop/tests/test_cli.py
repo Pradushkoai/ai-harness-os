@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 
 import pytest
@@ -536,3 +537,99 @@ class TestDoctor:
 
         assert cli.main() == 2
         assert "INCOMPLETE" in capsys.readouterr().out
+
+
+class TestVerifierPolicyDefaults:
+    """LS false positives merged into --ignore unless --strict-verify."""
+
+    def _args(self, **overrides):
+        base = {
+            "ignore": "",
+            "max_errors": 0,
+            "strict_verify": False,
+            "java": None,
+            "jar": None,
+            "timeout": 0.1,
+        }
+        base.update(overrides)
+        return argparse.Namespace(**base)
+
+    def test_default_policy_ignores_ls_false_positives(self):
+        verifier = cli._build_verifier(self._args())
+        assert "InvalidCharacterInFile" in verifier.policy.ignore_codes
+
+    def test_strict_verify_keeps_raw_ls_verdict(self):
+        verifier = cli._build_verifier(self._args(strict_verify=True))
+        assert "InvalidCharacterInFile" not in verifier.policy.ignore_codes
+
+    def test_user_ignore_merged_without_losing_own_codes(self):
+        verifier = cli._build_verifier(self._args(ignore="MyCode , Other"))
+        codes = verifier.policy.ignore_codes
+        assert {"MyCode", "Other", "InvalidCharacterInFile"} <= set(codes)
+
+    def test_run_and_eval_parsers_expose_strict_verify(self):
+        parser = cli._build_parser()
+        run_args = parser.parse_args(
+            ["run", "задача", "--strict-verify"]
+        )
+        assert run_args.strict_verify is True
+        eval_args = parser.parse_args(["eval", "--strict-verify"])
+        assert eval_args.strict_verify is True
+
+
+class TestJudgeSamplesCLI:
+    """--judge-samples K reaches the judge config."""
+
+    def _args(self, **overrides):
+        base = {
+            "config": None,
+            "judge_chain": None,
+            "judge_model": None,
+            "judge_samples": None,
+        }
+        base.update(overrides)
+        return argparse.Namespace(**base)
+
+    def _fake_router_port(self, monkeypatch):
+        from harness_loop.ports import RouterPort  # noqa: F401 — shape only
+
+        class FakePort:
+            def complete(self, messages, **kwargs):
+                raise AssertionError("not called in this test")
+
+        port = FakePort()
+        return port
+
+    def test_default_judge_config_samples_one(self, monkeypatch):
+        # Router/RouterConfig are irrelevant here: patch them out entirely.
+        monkeypatch.setattr(cli, "load_config", lambda: (object(), "builtin"))
+        monkeypatch.setattr(
+            cli, "Router", type("R", (), {"from_config": staticmethod(lambda rc: None)})
+        )
+
+        class FakeRouterPort:
+            def __init__(self, router, task=None, model=None):
+                pass
+
+        monkeypatch.setattr(cli, "RouterPort", FakeRouterPort)
+        judge = cli._build_judge(self._args())
+        assert judge.config.samples == 1
+
+    def test_judge_samples_flag_reaches_config(self, monkeypatch):
+        monkeypatch.setattr(cli, "load_config", lambda: (object(), "builtin"))
+        monkeypatch.setattr(
+            cli, "Router", type("R", (), {"from_config": staticmethod(lambda rc: None)})
+        )
+
+        class FakeRouterPort:
+            def __init__(self, router, task=None, model=None):
+                pass
+
+        monkeypatch.setattr(cli, "RouterPort", FakeRouterPort)
+        judge = cli._build_judge(self._args(judge_samples=3))
+        assert judge.config.samples == 3
+
+    def test_eval_parser_exposes_judge_samples(self):
+        parser = cli._build_parser()
+        args = parser.parse_args(["eval", "--judge-samples", "3"])
+        assert args.judge_samples == 3

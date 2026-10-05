@@ -69,20 +69,37 @@ def _classify(value: str) -> tuple[bool, bool]:
 
 @dataclass(frozen=True)
 class JudgeConfig:
-    """Judge behaviour knobs (temperature etc. are judge-specific)."""
+    """Judge behaviour knobs (temperature etc. are judge-specific).
+
+    samples is self-consistency: how many independent reviews the judge
+    runs before the verdict. Majority vote wins; a tie counts as approval
+    (the verifier stays the authority — the judge may only veto
+    explicitly). Default 1 keeps the token budget unchanged; the UT 11
+    pilot saw the same (task, code) pair scored 4/10-FAIL and then
+    10/10-PASS at temperature 0 — provider-side nondeterminism that
+    only vote aggregation smooths out.
+    """
 
     temperature: Optional[float] = None
     max_tokens: Optional[int] = None
     max_issues: int = 10
+    samples: int = 1
 
     def __post_init__(self) -> None:
         if self.max_issues < 1:
             raise ValueError(f"max_issues must be >= 1, got {self.max_issues}")
+        if self.samples < 1:
+            raise ValueError(f"samples must be >= 1, got {self.samples}")
 
 
 @dataclass(frozen=True)
 class JudgeVerdict:
-    """Parsed judge answer (raw text kept for debugging/telemetry)."""
+    """Parsed judge answer (raw text kept for debugging/telemetry).
+
+    samples/agreement describe self-consistency: how many independent
+    reviews ran and what share backed the final verdict (1.0 = unanimous;
+    0.5 on an even split means the judge itself is uncertain).
+    """
 
     approved: bool
     score: Optional[int] = None
@@ -92,6 +109,8 @@ class JudgeVerdict:
     model: str = ""
     latency_ms: float = 0.0
     raw: str = ""
+    samples: int = 1
+    agreement: float = 1.0
 
 
 def parse_judge_response(text: str, *, max_issues: int = 10) -> JudgeVerdict:
@@ -176,6 +195,11 @@ class Judge:
         mode: it sees the gold solution and compares semantics (the stricter
         L2 protocol of SWE-bench-BSL v0.4). The reference is a JUDGE-ONLY
         input — callers must never leak it into generator prompts.
+
+        With JudgeConfig.samples > 1 the review runs K times and the
+        verdict is the majority (tie -> approval: an unstable judge must
+        not burn loop iterations; the verifier gate stays the authority).
+        `agreement` in the result exposes the vote split for calibration.
         """
 
         user = judge_review_prompt(task, code, diagnostics, reference=reference)
@@ -192,14 +216,61 @@ class Judge:
         if self._config.max_tokens is not None:
             kwargs["max_tokens"] = self._config.max_tokens
 
-        result: CompletionResult = self._llm.complete(messages, **kwargs)
-        verdict = parse_judge_response(
-            result.text, max_issues=self._config.max_issues
-        )
-        return replace(
-            verdict,
-            model=getattr(result, "model", "") or "",
-            latency_ms=result.latency_ms,
+        verdicts = []
+        model = ""
+        latency_ms = 0.0
+        raw = ""
+        for _ in range(self._config.samples):
+            result: CompletionResult = self._llm.complete(messages, **kwargs)
+            verdicts.append(
+                parse_judge_response(
+                    result.text, max_issues=self._config.max_issues
+                )
+            )
+            model = getattr(result, "model", "") or ""
+            latency_ms += result.latency_ms
+            raw = result.text
+
+        if len(verdicts) == 1:
+            verdict = verdicts[0]
+            return replace(
+                verdict,
+                model=model,
+                latency_ms=latency_ms,
+                raw=raw,
+                samples=1,
+                agreement=1.0,
+            )
+
+        approves = sum(1 for v in verdicts if v.approved)
+        approved = approves * 2 >= len(verdicts)  # majority; tie -> approval (no veto)
+        scores = [v.score for v in verdicts if v.score is not None]
+        score = round(sum(scores) / len(scores)) if scores else None
+        parsed = any(v.parsed for v in verdicts)
+
+        seen: set = set()
+        issues: list[str] = []
+        for v in verdicts:
+            for issue in v.issues:
+                if issue not in seen:
+                    seen.add(issue)
+                    issues.append(issue)
+        majority_side = [v for v in verdicts if v.approved == approved]
+        reasoning = " ".join(
+            part for part in (v.reasoning for v in majority_side) if part
+        ).strip()
+
+        return JudgeVerdict(
+            approved=approved,
+            score=score,
+            issues=tuple(issues[: self._config.max_issues]),
+            reasoning=reasoning,
+            parsed=parsed,
+            model=model,
+            latency_ms=latency_ms,
+            raw=raw,
+            samples=len(verdicts),
+            agreement=approves / len(verdicts) if approved else 1 - approves / len(verdicts),
         )
 
 

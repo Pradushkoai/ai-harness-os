@@ -252,6 +252,8 @@ class BslAgentLoop:
                 log.judge_verdict = jverdict.approved
                 log.judge_issues = list(jverdict.issues)
                 log.judge_ms = jverdict.latency_ms
+                log.judge_samples = jverdict.samples
+                log.judge_agreement = jverdict.agreement
                 iterations.append(log)
                 self._notify(on_iteration, log)
                 if jverdict.approved:

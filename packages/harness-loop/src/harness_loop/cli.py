@@ -22,7 +22,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Optional, Sequence
 
-from bsl_verify import BslVerifyError, BslVerifier, VerifyPolicy
+from bsl_verify import BslVerifyError, BslVerifier, LS_FALSE_POSITIVE_CODES, VerifyPolicy
 from bsl_verify.runner import find_jar, find_java, java_version
 from russian_llm_pack import RLLError, Router, RouterConfig, load_config
 
@@ -77,6 +77,11 @@ def _build_parser() -> argparse.ArgumentParser:
     run.add_argument("--timeout", type=float, default=120.0, help="verifier analyze timeout, s")
     run.add_argument("--max-errors", type=int, default=0, help="policy: allowed errors (default 0)")
     run.add_argument("--ignore", default="", help="comma-separated diagnostic codes to ignore")
+    run.add_argument(
+        "--strict-verify",
+        action="store_true",
+        help="do not merge bsl-verify LS_FALSE_POSITIVE_CODES into --ignore",
+    )
     run.add_argument("--temperature", type=float, default=None)
     run.add_argument("--max-tokens", type=int, default=None)
     run.add_argument("--save", default=None, help="write the final code to this file")
@@ -87,6 +92,8 @@ def _build_parser() -> argparse.ArgumentParser:
                      help="router chain for the judge LLM (default: same as generation)")
     run.add_argument("--judge-model", default=None,
                      help="explicit 'provider/model' for the judge")
+    run.add_argument("--judge-samples", type=int, default=None, metavar="K",
+                     help="judge self-consistency: K votes, majority verdict (default 1)")
     run.add_argument("--langfuse", action="store_true",
                      help="send telemetry to Langfuse (LANGFUSE_PUBLIC_KEY/SECRET_KEY env)")
     run.add_argument("--java", default=None, help="path to java executable")
@@ -122,6 +129,11 @@ def _build_parser() -> argparse.ArgumentParser:
     ev.add_argument("--timeout", type=float, default=120.0, help="verifier analyze timeout, s")
     ev.add_argument("--max-errors", type=int, default=0, help="policy: allowed errors")
     ev.add_argument("--ignore", default="", help="comma-separated diagnostic codes to ignore")
+    ev.add_argument(
+        "--strict-verify",
+        action="store_true",
+        help="do not merge bsl-verify LS_FALSE_POSITIVE_CODES into --ignore",
+    )
     ev.add_argument("--temperature", type=float, default=None)
     ev.add_argument("--max-tokens", type=int, default=None)
     ev.add_argument("--judge", action="store_true", help="enable the LLM judge")
@@ -129,6 +141,8 @@ def _build_parser() -> argparse.ArgumentParser:
                     help="skip the L1 execution oracle (auto-discovered OneScript)")
     ev.add_argument("--judge-chain", default=None, help="router chain for the judge LLM")
     ev.add_argument("--judge-model", default=None, help="explicit 'provider/model' for the judge")
+    ev.add_argument("--judge-samples", type=int, default=None, metavar="K",
+                    help="judge self-consistency: K votes, majority verdict (default 1)")
     ev.add_argument(
         "--no-judge-reference",
         action="store_true",
@@ -180,13 +194,23 @@ def _build_judge(args: argparse.Namespace):
         task=getattr(args, "judge_chain", None),
         model=getattr(args, "judge_model", None),
     )
-    return Judge(port, JudgeConfig())
+    samples = getattr(args, "judge_samples", None)
+    config = JudgeConfig() if samples is None else JudgeConfig(samples=samples)
+    return Judge(port, config)
 
 
 def _build_verifier(args: argparse.Namespace) -> BslVerifier:
-    """Build the verifier side: BslVerifier with a policy from CLI flags."""
+    """Build the verifier side: BslVerifier with a policy from CLI flags.
+
+    By default the policy merges bsl-verify's LS_FALSE_POSITIVE_CODES —
+    LS errors that the engine runs fine (see the UT 11 pilot: em-dash in
+    comments -> InvalidCharacterInFile burned 3 iterations on a
+    non-problem). --strict-verify keeps the raw LS verdict instead.
+    """
 
     ignore = frozenset(c.strip() for c in args.ignore.split(",") if c.strip())
+    if not getattr(args, "strict_verify", False):
+        ignore = ignore | LS_FALSE_POSITIVE_CODES
     policy = VerifyPolicy(max_errors=args.max_errors, ignore_codes=ignore)
     return BslVerifier(java=args.java, jar=args.jar, timeout_s=args.timeout, policy=policy)
 

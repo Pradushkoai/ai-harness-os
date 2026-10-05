@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "harness-mcp"
-version = "0.1.0"
+version = "0.1.1"
 description = "MCP server exposing ai-harness-os to coding agents: verify_module / run_loop / eval_summary / benchmark_info / ping over the existing ports (roadmap 2.1, phase B)"
 readme = "README.md"
 requires-python = ">=3.10"

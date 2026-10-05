@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from bsl_verify.parser import parse_report
-from bsl_verify.policy import VerifyPolicy
+from bsl_verify.policy import LS_FALSE_POSITIVE_CODES, VerifyPolicy
 from bsl_verify.types import Diagnostic, FileReport, Position, Range, Severity
 from conftest import REAL_REPORT
 
@@ -106,3 +106,30 @@ class TestDescribe:
             ignore_codes=frozenset({"A", "B"}), only_codes=None
         ).describe()
         assert "ignore=A,B" in text
+
+
+class TestLSFalsePositiveCodes:
+    """The exported knowledge set: LS errors the engine runs fine."""
+
+    def test_set_contains_documented_false_positive(self):
+        assert "InvalidCharacterInFile" in LS_FALSE_POSITIVE_CODES
+
+    def test_set_exported_from_package_root(self):
+        import bsl_verify
+
+        assert bsl_verify.LS_FALSE_POSITIVE_CODES is LS_FALSE_POSITIVE_CODES
+
+    def test_harness_policy_passes_despite_the_false_positive(self):
+        # UT 11 pilot case: em-dash in a comment -> LS ERROR, engine runs it.
+        policy = VerifyPolicy(ignore_codes=LS_FALSE_POSITIVE_CODES)
+        verdict = policy.evaluate(
+            [report_with((Severity.ERROR, "InvalidCharacterInFile"))]
+        )
+        assert verdict.passed is True
+
+    def test_set_does_not_hide_real_parse_errors(self):
+        policy = VerifyPolicy(ignore_codes=LS_FALSE_POSITIVE_CODES)
+        verdict = policy.evaluate(
+            [report_with((Severity.ERROR, "ParseError"))]
+        )
+        assert verdict.passed is False

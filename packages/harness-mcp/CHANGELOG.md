@@ -2,6 +2,11 @@
 
 Формат — [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/), версионирование — [SemVer](https://semver.org/lang/ru/).
 
+## [0.1.1] — 2026-10-05
+
+### Changed
+- **Верификатор тулинга `verify_module` по умолчанию игнорирует LS-ложноположительные коды** (`bsl_verify.LS_FALSE_POSITIVE_CODES`, em-dash в комментариях — ERROR для LS при работающем рантайме; находка пилота УТ 11). Тулити `run_loop` не задет — его политика задаётся фабрикой loop. `HARNESS_STRICT_VERIFY=1` возвращает сырой LS-вердикт для тулингов с нулевой толерантностью.
+
 ## [0.1.0] — 2026-10-05
 
 ### Added

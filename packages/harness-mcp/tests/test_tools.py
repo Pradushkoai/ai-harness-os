@@ -54,7 +54,7 @@ class TestPing:
     def test_reports_versions_and_missing_environment(self, services, no_engine):
         outcome = tool_ping(services, {})
         assert not outcome.is_error
-        assert "harness_mcp 0.1.0" in outcome.text
+        assert "harness_mcp 0.1.1" in outcome.text
         assert "harness_loop" in outcome.text
         assert "NOT FOUND (verify_module unavailable)" in outcome.text
         assert "NOT FOUND (L1 off)" in outcome.text
@@ -226,3 +226,18 @@ class TestRunLoopProjectPath:
         services.state.put("run-fixed", cached)
         outcome = tool_run_loop(services, {"run_id": "run-fixed"})
         assert "context=builtin:1234t" in outcome.text
+
+
+class TestRealVerifierPolicy:
+    """MCP verifier defaults ignore LS false positives (UT 11 pilot fix)."""
+
+    def test_default_policy_ignores_invalid_character(self):
+        services = HarnessServices()  # real factories, lazy verifier
+        verifier = services._build_real_verifier()
+        assert "InvalidCharacterInFile" in verifier.policy.ignore_codes
+
+    def test_strict_env_keeps_raw_ls_verdict(self, monkeypatch):
+        monkeypatch.setenv("HARNESS_STRICT_VERIFY", "1")
+        services = HarnessServices()
+        verifier = services._build_real_verifier()
+        assert "InvalidCharacterInFile" not in verifier.policy.ignore_codes

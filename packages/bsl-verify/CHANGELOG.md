@@ -2,6 +2,11 @@
 
 Формат — [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/), версионирование — [SemVer](https://semver.org/lang/ru/).
 
+## [0.1.2] — 2026-10-05
+
+### Added
+- **`LS_FALSE_POSITIVE_CODES` — экспортируемое знание о ложных срабатываниях bsl-language-server.** Пилот на реальной конфигурации УТ 11 подтвердил: `InvalidCharacterInFile` (ERROR) выдаётся на не-ASCII пунктуацию в комментариях (em-dash U+2014 и т.п.), которую и платформа 1С, и OneScript исполняют без единой жалобы — 3 итерации цикла были сожжены на несуществующую проблему. Набор — это знание, а не дефолт: дефолт `VerifyPolicy` не изменился, циклы (harness-loop CLI, harness-mcp) мержат набор в `ignore_codes` сами; `--strict-verify` / `HARNESS_STRICT_VERIFY=1` возвращают сырой LS-вердикт.
+
 ## [0.1.1] — 2026-09-30
 
 ### Fixed

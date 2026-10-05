@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 
 from harness_loop.evals import BslTask, EvalReport, TaskOutcome, load_tasks, run_eval
@@ -256,3 +258,73 @@ class TestRunEvalWiring:
         )
         assert report.resolved_l1 == 0  # no code -> checks fail honestly
         assert report.l1_measured == 1
+
+
+class TestEngineNote:
+    """run_eval tells the generator which engine will execute the code."""
+
+    def _loop(self):
+        from unittest.mock import MagicMock
+
+        loop = MagicMock()
+        loop.run.return_value = _result()
+        loop.judge = None
+        return loop
+
+    def test_ready_executor_prepends_note_for_tasks_with_checks(self):
+        loop = self._loop()
+        executor = FakeExecutor(outputs={"Ф(1)": "1"})
+        base = _task(checks=[ExecCheck(call="Ф(1)", expect="1")])
+        task = replace(base, context="старый контекст")
+
+        run_eval([task], loop, executor=executor)
+
+        context = loop.run.call_args_list[0].kwargs["context"]
+        assert "OneScript 2.2.0" in context
+        assert "ДобавитьКДате" in context
+        # the task's own context survives after the note
+        assert context.endswith("старый контекст")
+
+    def test_task_without_checks_gets_no_note(self):
+        loop = self._loop()
+        executor = FakeExecutor(outputs={"Ф(1)": "1"})
+        task = replace(_task(checks=()), context="чистый контекст")
+
+        run_eval([task], loop, executor=executor)
+
+        context = loop.run.call_args_list[0].kwargs["context"]
+        assert "OneScript" not in context
+        assert context == "чистый контекст"
+
+    def test_unavailable_executor_gets_no_note(self):
+        loop = self._loop()
+        executor = FakeExecutor(unavailable=True)
+        task = _task(checks=[ExecCheck(call="Ф(1)", expect="1")])
+
+        run_eval([task], loop, executor=executor)
+
+        context = loop.run.call_args_list[0].kwargs["context"]
+        assert "OneScript" not in context
+
+    def test_no_executor_gets_no_note(self):
+        loop = self._loop()
+        task = _task(checks=[ExecCheck(call="Ф(1)", expect="1")])
+
+        run_eval([task], loop)
+
+        context = loop.run.call_args_list[0].kwargs["context"]
+        assert "OneScript" not in context
+
+    def test_note_mentiones_only_probe_confirmed_gaps(self):
+        from harness_loop.prompt import ONESCRIPT_ENGINE_NOTE
+
+        # every absent function named in the note was confirmed by a live
+        # probe against vanilla oscript 2.2.0 (2026-10-05)
+        for func in ("ДобавитьКДате", "ПериодСтр", "ПредставлениеПериода", "ЧислоПрописью"):
+            assert func in ONESCRIPT_ENGINE_NOTE
+        # and functions the probes confirmed PRESENT are not slandered
+        absent_block = ONESCRIPT_ENGINE_NOTE.split(
+            "НЕТ (Symbol not found):"
+        )[1].split(";")[0]
+        for present in ("НачалоМесяца", "Формат", "СтрШаблон"):
+            assert present not in absent_block

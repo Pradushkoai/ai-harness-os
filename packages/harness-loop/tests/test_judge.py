@@ -236,3 +236,82 @@ class TestJudgePrompts:
 
     def test_fix_prompt_no_issues_placeholder(self):
         assert "(замечаний нет)" in judge_fix_prompt("з", "", "К", ())
+
+
+class TestSelfConsistency:
+    """Majority-vote reviews (UT 11 pilot: same pair scored 4/10 and 10/10)."""
+
+    def test_majority_fail_vetoes(self):
+        llm = FakeLLMPort([FAIL_TEXT, FAIL_TEXT, PASS_TEXT])
+        judge = Judge(llm, JudgeConfig(samples=3))
+        verdict = judge.review("задача", MODULE_OK)
+
+        assert verdict.approved is False
+        assert verdict.samples == 3
+        assert verdict.agreement == pytest.approx(2 / 3)
+        assert len(llm.calls) == 3
+
+    def test_majority_pass_approves(self):
+        llm = FakeLLMPort([FAIL_TEXT, PASS_TEXT, PASS_TEXT])
+        judge = Judge(llm, JudgeConfig(samples=3))
+        verdict = judge.review("задача", MODULE_OK)
+
+        assert verdict.approved is True
+        assert verdict.agreement == pytest.approx(2 / 3)
+
+    def test_even_split_tie_is_not_a_veto(self):
+        llm = FakeLLMPort([FAIL_TEXT, PASS_TEXT])
+        judge = Judge(llm, JudgeConfig(samples=2))
+        verdict = judge.review("задача", MODULE_OK)
+
+        assert verdict.approved is True
+        assert verdict.samples == 2
+        assert verdict.agreement == pytest.approx(0.5)
+
+    def test_score_is_averaged_across_votes(self):
+        llm = FakeLLMPort([PASS_TEXT, FAIL_TEXT, PASS_TEXT])  # 8, 3, 8 -> 6
+        judge = Judge(llm, JudgeConfig(samples=3))
+        verdict = judge.review("задача", MODULE_OK)
+
+        assert verdict.score == 6
+
+    def test_issues_deduplicated_across_votes(self):
+        llm = FakeLLMPort([FAIL_TEXT, FAIL_TEXT, FAIL_TEXT])
+        judge = Judge(llm, JudgeConfig(samples=3))
+        verdict = judge.review("задача", MODULE_OK)
+
+        # the same three issues repeated three times -> reported once each
+        assert verdict.issues == (
+            "нет обработки пустого массива",
+            "лишняя переменная",
+            "цикл не завершается",
+        )
+
+    def test_single_sample_keeps_old_behaviour_and_fields(self):
+        llm = FakeLLMPort([FAIL_TEXT])
+        judge = Judge(llm)
+        verdict = judge.review("задача", MODULE_OK)
+
+        assert verdict.approved is False
+        assert verdict.samples == 1
+        assert verdict.agreement == 1.0
+        assert len(llm.calls) == 1
+
+    def test_latency_sums_across_votes(self):
+        llm = FakeLLMPort([PASS_TEXT, PASS_TEXT])
+        judge = Judge(llm, JudgeConfig(samples=2))
+        verdict = judge.review("задача", MODULE_OK)
+
+        assert verdict.latency_ms == pytest.approx(25.0)
+
+    def test_invalid_samples_rejected(self):
+        with pytest.raises(ValueError):
+            JudgeConfig(samples=0)
+
+    def test_unanimous_fail_reports_full_agreement(self):
+        llm = FakeLLMPort([FAIL_TEXT, FAIL_TEXT])
+        judge = Judge(llm, JudgeConfig(samples=2))
+        verdict = judge.review("задача", MODULE_OK)
+
+        assert verdict.approved is False
+        assert verdict.agreement == 1.0
