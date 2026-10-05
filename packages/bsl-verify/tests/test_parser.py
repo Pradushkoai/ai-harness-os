@@ -20,9 +20,10 @@ class TestRealReport:
     def test_file_path_decoded_from_uri(self):
         report = parse_report(REAL_REPORT)
         path = report.files[0].path
-        # OS-agnostic: on Windows the decoded path is "C:\..." (isabs),
-        # on POSIX "/..." (also isabs).
-        assert os.path.isabs(path)
+        # OS-agnostic: POSIX keeps "/...", Windows normpath yields "\..."
+        # (rooted). Since Python 3.13 ntpath.isabs() is False for rooted
+        # paths, assert "rooted or absolute" instead of isabs() alone.
+        assert os.path.isabs(path) or path.startswith(("/", "\\"))
         assert not path.startswith("file://")
         assert path.endswith("sample_broken.bsl")
 
@@ -107,9 +108,11 @@ class TestTolerance:
             diagnostic = parse_report(data).files[0].diagnostics[0]
             assert diagnostic.severity == expected, f"severity {raw!r}"
 
-    def test_non_uri_path_kept_as_is(self):
+    def test_non_uri_path_normalized(self):
         data = '{"fileinfos":[{"path":"D:/src/module.bsl","diagnostics":[]}]}'
-        assert parse_report(data).files[0].path == "D:/src/module.bsl"
+        # normpath keeps forward slashes on POSIX, converts them to
+        # backslashes on Windows — both are the local OS convention.
+        assert parse_report(data).files[0].path == os.path.normpath("D:/src/module.bsl")
 
     def test_invalid_json_raises(self):
         with pytest.raises(ReportParseError):
