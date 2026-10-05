@@ -133,6 +133,28 @@ class TaskOutcome:
         return None
 
     @property
+    def judge_samples(self) -> Optional[int]:
+        """Self-consistency size of the last judge run (None = no judge)."""
+
+        if self.result.judge is not None:
+            return self.result.judge.samples
+        for iteration in reversed(self.result.iterations):
+            if iteration.judge_verdict is not None:
+                return iteration.judge_samples
+        return None
+
+    @property
+    def judge_agreement(self) -> Optional[float]:
+        """Vote share behind the last verdict (1.0 = unanimous)."""
+
+        if self.result.judge is not None:
+            return self.result.judge.agreement
+        for iteration in reversed(self.result.iterations):
+            if iteration.judge_verdict is not None:
+                return iteration.judge_agreement
+        return None
+
+    @property
     def judge_score(self) -> Optional[int]:
         """Score of the last judge verdict (None when the judge never ran
         or answered without a parsable score)."""
@@ -158,6 +180,8 @@ class TaskOutcome:
             "judge_ms": round(self.result.total_judge_ms, 1),
             "judge_approved": self.judge_approved,
             "judge_score": self.judge_score,
+            "judge_samples": self.judge_samples,
+            "judge_agreement": self.judge_agreement,
             "reference": self.task.reference,
             "code": self.result.code,
         }

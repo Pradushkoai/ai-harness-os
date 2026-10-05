@@ -13,7 +13,7 @@ from harness_loop.executors import (
     ExecOutcome,
     normalize_output,
 )
-from harness_loop.types import LoopResult
+from harness_loop.types import IterationLog, LoopResult
 
 
 def _task(checks=(), category="function"):
@@ -328,3 +328,49 @@ class TestEngineNote:
         )[1].split(";")[0]
         for present in ("НачалоМесяца", "Формат", "СтрШаблон"):
             assert present not in absent_block
+
+
+class TestJudgeTelemetryInReport:
+    """judge_samples/judge_agreement surface in the per-task report (E-2)."""
+
+    def test_to_dict_carries_samples_and_agreement(self):
+        iteration = IterationLog(
+            index=1,
+            context_source="builtin",
+            context_tokens=1234,
+            code_extracted=True,
+            verified=True,
+        )
+        iteration.judge_verdict = False
+        iteration.judge_samples = 3
+        iteration.judge_agreement = 0.67
+        result = LoopResult(
+            passed=False, code="К", iterations=[iteration],
+            failure_reason="judge_rejected",
+        )
+        outcome = TaskOutcome(task=_task(), result=result)
+        payload = outcome.to_dict()
+        assert payload["judge_samples"] == 3
+        assert payload["judge_agreement"] == 0.67
+
+    def test_to_dict_none_without_judge(self):
+        result = _result()
+        payload = TaskOutcome(task=_task(), result=result).to_dict()
+        assert payload["judge_samples"] is None
+        assert payload["judge_agreement"] is None
+
+    def test_result_judge_wins_over_iterations(self):
+        from harness_loop.judge import JudgeVerdict
+
+        iteration = IterationLog(index=1, code_extracted=True, verified=True)
+        iteration.judge_verdict = False
+        iteration.judge_samples = 3
+        result = LoopResult(
+            passed=True,
+            code="К",
+            iterations=[iteration],
+            judge=JudgeVerdict(approved=True, samples=1, agreement=1.0),
+        )
+        outcome = TaskOutcome(task=_task(), result=result)
+        assert outcome.judge_samples == 1  # final verdict, not the veto loop
+        assert outcome.judge_agreement == 1.0
