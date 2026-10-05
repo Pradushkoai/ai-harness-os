@@ -21,6 +21,11 @@ Adapter choice is one environment variable:
     HARNESS_CONTEXT = "builtin" -> BuiltInIndexer (default)
     HARNESS_CONTEXT = "none"    -> no provider at all
 
+Scale knob (for real-configuration pilots):
+    HARNESS_CONTEXT_MAX_FILES=N -> how many module heads the builtin indexer
+        reads (default 500; a real UT 11 dump carries 7141 .bsl modules —
+        the cap bounds IO, path pre-ranking decides WHICH files survive it)
+
 Observability (C3): ContextResult carries source and token size; the
 loop copies them into every IterationLog.
 """
@@ -44,6 +49,7 @@ _MAX_METADATA_PER_MODULE = 8
 
 _ENV_BACKEND = "HARNESS_CONTEXT"
 _ENV_MCP_PATH = "CODE_INDEX_MCP_PATH"
+_ENV_MAX_FILES = "HARNESS_CONTEXT_MAX_FILES"
 
 # procedure/function signatures, export-flag aware (BSL + OneScript)
 _SIG_RE = re.compile(
@@ -105,6 +111,7 @@ class _ModuleInfo:
     signatures: tuple
     metadata: tuple
     score: int = 0
+    sig_total: int = 0
 
 
 class BuiltInIndexer:
@@ -115,11 +122,20 @@ class BuiltInIndexer:
     def __init__(
         self,
         token_budget: int = DEFAULT_TOKEN_BUDGET,
-        max_files: int = _MAX_FILES_SCANNED,
+        max_files: Optional[int] = None,
         max_file_bytes: int = _MAX_FILE_BYTES,
     ) -> None:
         if token_budget < 100:
             raise ValueError(f"token_budget must be >= 100, got {token_budget}")
+        if max_files is None:
+            # real configurations carry thousands of modules (UT 11 dump:
+            # 7141 .bsl); the cap bounds IO, the env var lets a pilot raise it
+            try:
+                max_files = int(os.environ.get(_ENV_MAX_FILES, _MAX_FILES_SCANNED))
+            except ValueError:
+                max_files = _MAX_FILES_SCANNED
+        if max_files < 1:
+            raise ValueError(f"max_files must be >= 1, got {max_files}")
         self._budget = token_budget
         self._max_files = max_files
         self._max_file_bytes = max_file_bytes
@@ -132,15 +148,15 @@ class BuiltInIndexer:
         if not root.is_dir():
             return ContextResult(note=f"project path not found: {project_path}")
 
-        modules = self._scan(root)
+        words = _task_words(task)
+        modules = self._scan(root, words)
         if not modules:
             return ContextResult(modules_scanned=0, note="no .bsl/.os modules found")
 
-        words = _task_words(task)
         # relevance decides the ORDER; the token budget decides the CUT —
         # score-0 modules ride at the tail and only survive in small projects
         scored = sorted(
-            (_ModuleInfo(m.path, m.signatures, m.metadata, self._score(m, words)) for m in modules),
+            (replace(m, score=self._score(m, words)) for m in modules),
             key=lambda m: (-m.score, m.path),
         )
 
@@ -175,19 +191,39 @@ class BuiltInIndexer:
 
     # -- internals ---------------------------------------------------------
 
-    def _scan(self, root: Path) -> list[_ModuleInfo]:
+    def _scan(self, root: Path, words: list[str]) -> list[_ModuleInfo]:
         found: list[_ModuleInfo] = []
         files = sorted(
             p
             for p in root.rglob("*")
             if p.suffix.lower() in (".bsl", ".os") and p.is_file()
         )
+        # scale guard: reading every head is IO-bound, so when the project is
+        # larger than the cap we rank by PATH relevance BEFORE reading — the
+        # cap then cuts the least relevant files, not the alphabetically last
+        # ones (found on a real UT 11 dump: 7141 modules, cap 500 = 7% seen)
+        if len(files) > self._max_files:
+
+            def path_rank(p: Path) -> tuple[int, str]:
+                rel = p.relative_to(root).as_posix().lower()
+                return (-sum(1 for w in words if w in rel), rel)
+
+            files = sorted(files, key=path_rank)[: self._max_files]
         for path in files[: self._max_files]:
             try:
-                head = path.read_bytes()[: self._max_file_bytes].decode("utf-8", errors="replace")
+                # utf-8-sig strips the BOM (every module of a real EDT dump
+                # carries one; a leading \ufeff is not matched by \s and the
+                # FIRST signature of the file would be lost); errors=ignore
+                # drops a multibyte character that the 64 KiB head cut in half
+                # instead of injecting U+FFFD garbage into the signatures
+                head = path.read_bytes()[: self._max_file_bytes].decode(
+                    "utf-8-sig", errors="ignore"
+                )
             except OSError:
                 continue
-            matches = _SIG_RE.findall(head)[:_MAX_SIGNATURES_PER_MODULE]
+            all_matches = _SIG_RE.findall(head)
+            matches = all_matches[:_MAX_SIGNATURES_PER_MODULE]
+            sig_total = len(all_matches)
             signatures = tuple(
                 "    {} {}({}){}".format(
                     kind, name, self._tidy_params(params), " Экспорт" if exported else ""
@@ -198,13 +234,17 @@ class BuiltInIndexer:
             # root-relative, forward slashes — readable for the LLM and
             # independent of where the project happens to live
             relative = path.relative_to(root).as_posix()
-            found.append(_ModuleInfo(relative, signatures, metadata))
+            found.append(_ModuleInfo(relative, signatures, metadata, sig_total=sig_total))
         return found
 
     @staticmethod
     def _tidy_params(params: str) -> str:
-        cleaned = re.sub(r"\s+", " ", params.replace("Знач ", "").strip())
-        return cleaned[:120]
+        # real modules keep comments INSIDE parameter lists
+        # ("ПриВыгрузкеДанных(СтандартнаяОбработка, // HS\n Структура)");
+        # strip them, then flatten whitespace
+        no_comments = re.sub(r"//[^\n]*", " ", params)
+        cleaned = re.sub(r"\s+", " ", no_comments.replace("Знач ", "").strip())
+        return cleaned[:120] + "…" if len(cleaned) > 120 else cleaned
 
     @staticmethod
     def _score(info: _ModuleInfo, words: list[str]) -> int:
@@ -226,6 +266,9 @@ class BuiltInIndexer:
             lines.extend(module.signatures)
         else:
             lines.append("    (экспортируемых сигнатур не найдено)")
+        hidden = module.sig_total - len(module.signatures)
+        if hidden > 0:
+            lines.append(f"    (и ещё {hidden} сигнатур, скрыто лимитом)")
         return "\n".join(lines)
 
 

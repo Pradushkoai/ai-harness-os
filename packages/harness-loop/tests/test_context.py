@@ -88,6 +88,97 @@ class TestBuiltInIndexer:
         with pytest.raises(ValueError):
             BuiltInIndexer(token_budget=10)
 
+    # -- real-config hardening (found on a UT 11 dump: 7141 .bsl modules) --
+
+    def test_bom_does_not_hide_first_signature(self, tmp_path):
+        # every module of a real EDT dump starts with a UTF-8 BOM; \ufeff is
+        # not matched by \s* so the first signature of the file was lost
+        body = (
+            "Процедура ПерваяСтрокой() Экспорт\nКонецПроцедуры\n"
+            "Процедура Вторая() Экспорт\nКонецПроцедуры\n"
+        ).encode("utf-8")
+        (tmp_path / "СБомом.bsl").write_bytes(b"\xef\xbb\xbf" + body)
+        result = BuiltInIndexer().collect(str(tmp_path), "задача")
+        assert "ПерваяСтрокой" in result.text
+
+    def test_multibyte_char_cut_by_head_limit_is_dropped_not_mangled(self, tmp_path):
+        # the 64 KiB head slice can cut a Cyrillic letter in half; the old
+        # decode(errors="replace") injected U+FFFD into the text
+        filler = ("//" + "я" * 30 + "\n").encode("utf-8")  # 63 bytes per line
+        while len(filler) < 300:
+            filler += filler
+        (tmp_path / "Обрезка.bsl").write_bytes(
+            filler[:100] + "\nПроцедура Целая() Экспорт\nКонецПроцедуры\n".encode("utf-8")
+        )
+        indexer = BuiltInIndexer(max_files=2, max_file_bytes=100)
+        result = indexer.collect(str(tmp_path), "задача")
+        assert "\ufffd" not in result.text
+
+    def test_cap_cuts_by_path_relevance_not_alphabet(self, tmp_path):
+        # a real config carries thousands of modules; with a small cap the
+        # alphabetical first files used to crowd out the relevant ones
+        for name in ("ААА Первый.bsl", "БББ Второй.bsl", "ВВВ Третий.bsl"):
+            (tmp_path / name).write_text(
+                "Процедура Пустая() Экспорт\nКонецПроцедуры\n", encoding="utf-8"
+            )
+        (tmp_path / "Склад").mkdir()
+        (tmp_path / "Склад" / "ОстаткиТоваров.bsl").write_text(
+            "Функция Остатки() Экспорт\nКонецФункции\n", encoding="utf-8"
+        )
+        result = BuiltInIndexer(max_files=1).collect(
+            str(tmp_path), "проверить остатки товаров на складе"
+        )
+        assert result.modules_scanned == 1
+        assert "ОстаткиТоваров.bsl" in result.text
+        assert "ААА" not in result.text
+
+    def test_comment_inside_params_is_stripped(self, tmp_path):
+        # real UT module: ПриВыгрузкеДанных(СтандартнаяОбработка, // HS\n
+        # Структура) — the comment leaked into the rendered params line
+        (tmp_path / "Обмен.bsl").write_text(
+            "Функция ПриВыгрузке(СтандартнаяОбработка,\n"
+            "\t\t\t// HS\n"
+            "\t\t\tСтруктура) Экспорт\n"
+            "КонецФункции\n",
+            encoding="utf-8",
+        )
+        result = BuiltInIndexer().collect(str(tmp_path), "выгрузка")
+        assert "HS" not in result.text
+        assert "Структура" in result.text
+
+    def test_long_params_end_with_ellipsis(self, tmp_path):
+        long_param = "П" + "рам" * 80
+        (tmp_path / "Длинный.bsl").write_text(
+            f"Функция Длинная({long_param}) Экспорт\nКонецФункции\n", encoding="utf-8"
+        )
+        result = BuiltInIndexer().collect(str(tmp_path), "длинная")
+        line = next(ln for ln in result.text.split("\n") if "Длинная(" in ln)
+        assert "…" in line  # truncation marker inside the params
+
+    def test_clipped_signature_count_is_marked(self, tmp_path):
+        lines = [
+            f"Процедура Шаг{я:02d}() Экспорт\nКонецПроцедуры\n" for я in range(45)
+        ]
+        (tmp_path / "Много.bsl").write_text("".join(lines), encoding="utf-8")
+        result = BuiltInIndexer().collect(str(tmp_path), "шаг")
+        assert "(и ещё 5 сигнатур" in result.text
+
+    def test_env_max_files_override(self, tmp_path, monkeypatch):
+        for i in range(5):
+            (tmp_path / f"М{i}.bsl").write_text(
+                "Процедура П() Экспорт\nКонецПроцедуры\n", encoding="utf-8"
+            )
+        monkeypatch.setenv("HARNESS_CONTEXT_MAX_FILES", "2")
+        result = BuiltInIndexer().collect(str(tmp_path), "задача")
+        assert result.modules_scanned == 2
+        monkeypatch.setenv("HARNESS_CONTEXT_MAX_FILES", "не число")
+        result = BuiltInIndexer().collect(str(tmp_path), "задача")
+        assert result.modules_scanned == 5  # falls back to the 500 default
+
+    def test_bad_max_files_rejected(self):
+        with pytest.raises(ValueError):
+            BuiltInIndexer(max_files=0)
+
 
 class TestEstimateTokens:
     def test_roughly_four_chars_per_token(self):
