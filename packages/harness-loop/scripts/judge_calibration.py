@@ -213,10 +213,12 @@ def cmd_run(args: argparse.Namespace) -> int:
         verdict = judge.review(task.prompt, candidate["code"], reference=task.reference)
         human.append(str(labeled["human"]).lower() == "pass")
         judge_out.append(bool(verdict.approved))
-        print(f"{task_id:<32} human={labeled['human']:<4} judge={'pass' if verdict.approved else 'fail'}")
+        judge_mark = "pass" if verdict.approved else "fail"
+        print(f"{task_id:<32} human={labeled['human']:<4} judge={judge_mark}")
 
     if missing:
-        print(f"\nunlabeled tasks ({len(missing)}): {', '.join(missing[:8])}{'...' if len(missing) > 8 else ''}")
+        head = ', '.join(missing[:8]) + ('...' if len(missing) > 8 else '')
+        print(f"\nunlabeled tasks ({len(missing)}): {head}")
         print("calibration needs labels for every candidate — fill judge_labels.yaml")
         return 1
 
@@ -231,7 +233,10 @@ def cmd_run(args: argparse.Namespace) -> int:
             **metrics
         )
     )
-    verdict_line = "OK (>= 0.70)" if metrics["precision"] >= 0.70 and metrics["recall"] >= 0.70 else "BELOW 0.70 — the judge needs work before the pilot"
+    good = metrics["precision"] >= 0.70 and metrics["recall"] >= 0.70
+    verdict_line = (
+        "OK (>= 0.70)" if good else "BELOW 0.70 — the judge needs work before the pilot"
+    )
     print(f"acceptance:     {verdict_line}")
     if args.report:
         Path(args.report).write_text(
@@ -243,7 +248,9 @@ def cmd_run(args: argparse.Namespace) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="L2 judge calibration (roadmap 2.1, D2)")
-    parser.add_argument("stage", choices=["prepare", "run"], help="prepare candidates or compute metrics")
+    parser.add_argument(
+        "stage", choices=["prepare", "run"], help="prepare candidates or compute metrics"
+    )
     parser.add_argument("--n", type=int, default=30, help="sample size (default 30)")
     parser.add_argument("--seed", type=int, default=42, help="sampling seed (default 42)")
     parser.add_argument("--force", action="store_true", help="overwrite existing candidates")

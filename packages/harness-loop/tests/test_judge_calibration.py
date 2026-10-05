@@ -8,13 +8,13 @@ from pathlib import Path
 
 import pytest
 
-SCRIPT = Path(__file__).parent.parent / "scripts" / "judge_calibration.py"
-spec = importlib.util.spec_from_file_location("judge_calibration", SCRIPT)
-jc = importlib.util.module_from_spec(spec)
-sys.modules["judge_calibration"] = jc
-spec.loader.exec_module(jc)
+from harness_loop.evals import bundled_tasks_path, load_tasks  # noqa: E402 (script import below)
 
-from harness_loop.evals import bundled_tasks_path, load_tasks
+SCRIPT = Path(__file__).parent.parent / "scripts" / "judge_calibration.py"
+_spec = importlib.util.spec_from_file_location("judge_calibration", SCRIPT)
+jc = importlib.util.module_from_spec(_spec)
+sys.modules["judge_calibration"] = jc
+_spec.loader.exec_module(jc)
 
 
 class TestSampleTasks:
