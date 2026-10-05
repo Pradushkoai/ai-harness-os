@@ -135,7 +135,7 @@ fi
 
 "$VENV_PY" -m pip install --quiet --upgrade pip || warn "pip upgrade не удался (не критично)"
 
-PACKAGES="russian-llm-pack bsl-verify harness-loop agents-md"
+PACKAGES="russian-llm-pack bsl-verify harness-loop agents-md harness-mcp"
 for pkg in $PACKAGES; do
   step "  pip install -e packages/$pkg[dev]"
   if "$VENV_PY" -m pip install --quiet -e "packages/$pkg[dev]"; then

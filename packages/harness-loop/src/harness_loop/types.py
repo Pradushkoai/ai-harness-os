@@ -159,11 +159,14 @@ class LoopResult:
             elif it.verified is None:
                 desc = "not verified"
             elif it.verified:
-                desc = f"verify PASSED ({it.errors} error, {it.warnings} warning, {it.infos} info)"
+                desc = (
+                    f"verify PASSED ({it.errors} error, {it.warnings} warning, "
+                    f"{it.informations} info)"
+                )
             else:
                 desc = (
                     f"verify FAILED ({it.errors} error, {it.warnings} warning, "
-                    f"{it.infos} info)"
+                    f"{it.informations} info)"
                 )
             if it.judge_verdict is True:
                 desc += " judge PASS"

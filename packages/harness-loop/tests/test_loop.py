@@ -425,3 +425,33 @@ class TestResultRendering:
         assert len(lines) == 2
         assert lines[0].startswith("module.bsl:5:1 ERROR ParseError")
         assert lines[1].startswith("module.bsl:3:1 WARNING W")
+
+
+class TestSummaryLinesRegression:
+    """MCP adapter caught a latent bug: summary_lines referenced
+    IterationLog.infos (the field is `informations`) — crashed whenever an
+    iteration actually extracted and verified code."""
+
+    def test_summary_lines_with_verified_code(self):
+        from harness_loop.types import IterationLog, LoopResult
+
+        iteration = IterationLog(
+            index=1, model="m", code_extracted=True, verified=True,
+            errors=0, warnings=2, informations=3,
+        )
+        result = LoopResult(passed=True, code="Код", iterations=[iteration])
+        lines = result.summary_lines()
+        assert any("verify PASSED" in line for line in lines)
+        assert any("2 warning" in line and "3 info" in line for line in lines)
+
+    def test_summary_lines_with_failed_verification(self):
+        from harness_loop.types import IterationLog, LoopResult
+
+        iteration = IterationLog(
+            index=1, code_extracted=True, verified=False, errors=1, informations=2,
+        )
+        result = LoopResult(
+            passed=False, code="", iterations=[iteration], failure_reason="budget_exhausted"
+        )
+        lines = result.summary_lines()
+        assert any("verify FAILED" in line for line in lines)

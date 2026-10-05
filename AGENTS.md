@@ -4,7 +4,7 @@
 
 ## Проект
 
-Монорепозиторий открытых пакетов ИИ-инфраструктуры для 1С-разработки: `russian-llm-pack` (LLM-слой с роутингом), `bsl-verify` (статическая проверка BSL), `harness-loop` (agent loop поверх обоих), `agents-md` (генератор AGENTS.md, самостоятельно). Пакеты ниже по стеку должны оставаться самодостаточными — их знает только `harness-loop`; `agents-md` ни от кого не зависит (чистый stdlib).
+Монорепозиторий открытых пакетов ИИ-инфраструктуры для 1С-разработки: `russian-llm-pack` (LLM-слой с роутингом), `bsl-verify` (статическая проверка BSL), `harness-loop` (agent loop поверх обоих), `agents-md` (генератор AGENTS.md, самостоятельно), `harness-mcp` (MCP-сервер поверх harness-loop — доступ агентов к харнессу). Пакеты ниже по стеку должны оставаться самодостаточными — их знает только `harness-loop`; `agents-md` ни от кого не зависит (чистый stdlib); `harness-mcp` — верхний слой, зависит от `harness-loop`.
 
 ## Жёсткие правила
 
@@ -47,13 +47,19 @@ packages/
 │       ├── executors.py       # L1-оракул: ExecutorPort + OneScriptRunner (изоляция, таймаут)
 │       ├── loop.py            # BslAgentLoop + RouterPort (Router→LLMPort)
 │       └── cli.py             # harness-loop run / eval / doctor
-└── agents-md/                 # генератор AGENTS.md (зависимостей нет)
-    └── src/agents_md/
-        ├── types.py           # ProjectInfo / StructureEntry / KIND_*
-        ├── detect.py          # анализ: 1C-edt / 1C-xml / python / js-ts / generic
-        ├── structure.py       # ограниченный сканер каталогов + дерево
-        ├── generate.py        # RU-шаблоны по типу проекта
-        ├── validate.py        # UTF-8 / 32 KiB / обязательные разделы
+├── agents-md/                 # генератор AGENTS.md (зависимостей нет)
+│   └── src/agents_md/
+│       ├── types.py           # ProjectInfo / StructureEntry / KIND_*
+│       ├── detect.py          # анализ: 1C-edt / 1C-xml / python / js-ts / generic
+│       ├── structure.py       # ограниченный сканер каталогов + дерево
+│       ├── generate.py        # RU-шаблоны по типу проекта
+│       └── validate.py        # UTF-8 / 32 KiB / обязательные разделы
+└── harness-mcp/               # MCP-выход: stdio-сервер для агентов (фаза B)
+    └── src/harness_mcp/
+        ├── protocol.py        # JSON-RPC 2.0 + MCP: initialize/tools/notifications
+        ├── tools.py           # 5 тулингов поверх готовых портов (ping/…)
+        ├── state.py           # сессионный кэш run_id с TTL (без персистентности)
+        └── server.py          # stdio-цикл: строка = сообщение
         └── cli.py             # agents-md init / validate
 scripts/
 └── setup.sh                   # установка+тесты за один запуск (Git Bash/WSL/Linux/macOS)

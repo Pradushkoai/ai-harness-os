@@ -38,6 +38,8 @@ jobs:
             smoke: "harness-loop --version"
           - name: agents-md
             smoke: "agents-md --version"
+          - name: harness-mcp
+            smoke: "harness-mcp --version"
     name: ${{ matrix.package.name }} / py${{ matrix.python-version }}
     steps:
       - uses: actions/checkout@v4
@@ -54,6 +56,7 @@ jobs:
           pip install -e "packages/bsl-verify[dev]"
           pip install -e "packages/harness-loop[dev]"
           pip install -e "packages/agents-md[dev]"
+          pip install -e "packages/harness-mcp[dev]"
 
       - name: Run unit tests (no network, no java, no keys)
         working-directory: packages/${{ matrix.package.name }}
@@ -80,6 +83,8 @@ jobs:
             smoke: "harness-loop --version"
           - name: agents-md
             smoke: "agents-md --version"
+          - name: harness-mcp
+            smoke: "harness-mcp --version"
     name: windows / ${{ matrix.package.name }} / py3.14
     steps:
       - uses: actions/checkout@v4
@@ -96,6 +101,7 @@ jobs:
           pip install -e "packages/bsl-verify[dev]"
           pip install -e "packages/harness-loop[dev]"
           pip install -e "packages/agents-md[dev]"
+          pip install -e "packages/harness-mcp[dev]"
 
       - name: Run unit tests (no network, no java, no keys)
         working-directory: packages/${{ matrix.package.name }}
