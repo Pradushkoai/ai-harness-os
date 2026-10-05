@@ -93,6 +93,22 @@ class TestBuildDriver:
         assert driver.count("Попытка") == 2
         assert "__CHK1__" in driver and "__CHK2__" in driver
 
+    def test_setup_with_semicolon_inside_string_stays_one_statement(self):
+        checks = [
+            ExecCheck(
+                call='ПереводИзНСтр(Н, "ru")',
+                setup='Н = "ru = \'Привет\'; en = \'Hello\'"',
+            )
+        ]
+        driver = build_driver("Функция Ф()\nКонецФункции", checks)
+        assert 'Н = "ru = \'Привет\'; en = \'Hello\'";' in driver
+
+    def test_setup_splitter_respects_doubled_quotes(self):
+        from harness_loop.executors import _split_setup_statements
+
+        stmts = _split_setup_statements('А = "x"";y"; Б = 1; В = 2')
+        assert stmts == ['А = "x"";y"', "Б = 1", "В = 2"]
+
     def test_empty_check_list_still_valid_script(self):
         driver = build_driver("Код", [])
         assert "Код" in driver

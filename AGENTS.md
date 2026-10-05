@@ -43,7 +43,7 @@ packages/
 │       ├── judge.py           # LLM-as-judge: вердикт, толерантный парсер, вето
 │       ├── telemetry.py       # Langfuse: on_event/on_iteration → ingestion API
 │       ├── evals.py           # mini SWE-bench-BSL: задачи, раннер, отчёты
-│       ├── eval_data/         # tasks_v0.yaml — 70 задач (15 категорий), 54 с L1-чеками
+│       ├── eval_data/         # tasks_v0.yaml — 70 задач (15 категорий), 59 с L1-чеками
 │       ├── executors.py       # L1-оракул: ExecutorPort + OneScriptRunner (изоляция, таймаут)
 │       ├── loop.py            # BslAgentLoop + RouterPort (Router→LLMPort)
 │       └── cli.py             # harness-loop run / eval / doctor

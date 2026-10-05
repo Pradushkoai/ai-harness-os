@@ -258,6 +258,37 @@ class StubHttpServer:
         self.close()
 
 
+def _split_setup_statements(setup: str) -> list[str]:
+    """Split setup into statements on ';' outside double-quoted strings.
+
+    BSL string literals are double-quoted with a doubled quote as the
+    escape; a naive character split breaks setups like `Н = "ru = 'x'; en = 'y'"`
+    (the НСтр format itself is semicolon-separated).
+    """
+
+    statements: list[str] = []
+    buf: list[str] = []
+    in_string = False
+    i = 0
+    while i < len(setup):
+        ch = setup[i]
+        if ch == '"':
+            if in_string and i + 1 < len(setup) and setup[i + 1] == '"':
+                buf.append('""')
+                i += 2
+                continue
+            in_string = not in_string
+            buf.append(ch)
+        elif ch == ";" and not in_string:
+            statements.append("".join(buf))
+            buf = []
+        else:
+            buf.append(ch)
+        i += 1
+    statements.append("".join(buf))
+    return [s for s in (stmt.strip() for stmt in statements) if s]
+
+
 def build_driver(
     module_code: str, checks: list[ExecCheck], server_port: Optional[int] = None
 ) -> str:
@@ -276,9 +307,8 @@ def build_driver(
     for index, check in enumerate(checks, start=1):
         marker = f"__CHK{index}__"
         setup = [
-            "    " + stmt.strip().rstrip(";") + ";"
-            for stmt in check.setup.split(";")
-            if stmt.strip()
+            "    " + stmt.rstrip(";") + ";"
+            for stmt in _split_setup_statements(check.setup)
         ]
         lines.append(f"Попытка // {marker}")
         lines.extend(setup)
