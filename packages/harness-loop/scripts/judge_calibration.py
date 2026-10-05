@@ -26,6 +26,16 @@ Usage (from packages/harness-loop):
     python scripts/judge_calibration.py prepare [--n 30] [--seed 42]
     # ... fill judge_labels.yaml by hand ...
     python scripts/judge_calibration.py run [--report out.yaml]
+
+Token-free variant (candidates already produced by a live eval run with
+`--save-report`): reuse them instead of re-running the loop:
+    python scripts/judge_calibration.py prepare \
+        --from-reports ../../runs/judge-v04/p01.json ../../runs/judge-v04/p02.json
+    # or an explicit task list (intersection with the reports):
+    python scripts/judge_calibration.py prepare --from-reports p*.json \
+        --ids func-is-prime,table-create-catalog
+Only task id + final code are read from the reports — judge verdicts and
+exec outcomes are never extracted, so blind labeling stays blind.
 """
 
 from __future__ import annotations
@@ -115,9 +125,75 @@ def _yaml_dump(data) -> str:
     return yaml.safe_dump(data, allow_unicode=True, sort_keys=False)
 
 
+def collect_from_reports(paths: list[str]) -> dict[str, str]:
+    """Read eval report JSONs and map task_id -> final candidate code.
+
+    Entries may be comma-joined ("a.json,b.json") for shell convenience.
+    Only `id` and `code` are read — judge/exec fields stay out on purpose:
+    the candidates file must not leak judge decisions to the annotator.
+    Later reports win when the same task id appears twice.
+    """
+
+    import json
+
+    codes: dict[str, str] = {}
+    for raw in paths:
+        for chunk in str(raw).split(","):
+            name = chunk.strip()
+            if not name:
+                continue
+            data = json.loads(Path(name).read_text(encoding="utf-8"))
+            for task in data.get("tasks", []):
+                task_id = task.get("id")
+                code = task.get("code")
+                if task_id and code:
+                    codes[str(task_id)] = str(code)
+    return codes
+
+
+def _candidate_rows(sample: list, codes: dict[str, str]) -> list[dict]:
+    return [
+        {
+            "task_id": task.id,
+            "category": task.category,
+            "difficulty": task.difficulty,
+            "prompt": task.prompt,
+            "reference": task.reference,
+            "code": codes[task.id],
+        }
+        for task in sample
+    ]
+
+
+def _write_calibration_files(
+    candidates: list[dict], candidates_path: Path, labels_path: Path
+) -> None:
+    candidates_path.write_text(_yaml_dump(candidates), encoding="utf-8")
+    labels_path.write_text(
+        _yaml_dump([{"task_id": c["task_id"], "human": "", "note": ""} for c in candidates]),
+        encoding="utf-8",
+    )
+    print(f"\ncandidates: {candidates_path}")
+    print(f"labels:     {labels_path} — fill `human: pass|fail` BLIND (see module docstring)")
+    print("then run:   python scripts/judge_calibration.py run")
+
+
+def _select_sample(args: argparse.Namespace, tasks: list) -> list:
+    """Sample selection shared by the live and report-based paths."""
+
+    if args.ids:
+        wanted = [chunk.strip() for chunk in args.ids.split(",") if chunk.strip()]
+        known = {t.id for t in tasks}
+        unknown = [i for i in wanted if i not in known]
+        if unknown:
+            raise SystemExit(f"unknown task ids: {', '.join(unknown)}")
+        order = {task_id: index for index, task_id in enumerate(wanted)}
+        return sorted((t for t in tasks if t.id in order), key=lambda t: order[t.id])
+    return sample_tasks(tasks, n=args.n, seed=args.seed)
+
+
 def cmd_prepare(args: argparse.Namespace) -> int:
     tasks = load_tasks(bundled_tasks_path())
-    sample = sample_tasks(tasks, n=args.n, seed=args.seed)
     WORKDIR.mkdir(exist_ok=True)
 
     candidates_path = WORKDIR / CANDIDATES_FILE
@@ -125,6 +201,33 @@ def cmd_prepare(args: argparse.Namespace) -> int:
     if candidates_path.exists() and not args.force:
         print(f"{candidates_path} exists — pass --force to overwrite (labels are lost!)")
         return 1
+
+    sample = _select_sample(args, tasks)
+
+    if args.from_reports:
+        codes = collect_from_reports(args.from_reports)
+        if not codes:
+            print("no candidate code found in the given reports")
+            return 1
+        if args.ids:
+            absent = [t.id for t in sample if t.id not in codes]
+            if absent:
+                print(f"no candidate code in reports for: {', '.join(absent)}")
+                return 1
+            usable = sample
+        else:
+            usable = [t for t in sample if t.id in codes]
+            if not usable:
+                print("sample and reports do not intersect — check --n/--seed or report paths")
+                return 1
+            skipped = len(sample) - len(usable)
+            if skipped:
+                print(f"note: {skipped} sampled task(s) not in reports — skipped")
+        _write_calibration_files(_candidate_rows(usable, codes), candidates_path, labels_path)
+        print(f"source: eval reports ({len(args.from_reports)} file arg(s), "
+              f"{len(codes)} candidate(s) available)")
+        print(f"sample: {len(usable)} task(s)")
+        return 0
 
     # The live loop needs a configured LLM; without keys we still emit the
     # sample + template so the annotator can prepare, and fail loudly.
@@ -147,34 +250,13 @@ def cmd_prepare(args: argparse.Namespace) -> int:
         return 2
 
     loop = BslAgentLoop(llm=llm, verifier=verifier)
-    candidates = []
+    codes: dict[str, str] = {}
     for index, task in enumerate(sample, start=1):
         print(f"[{index:>2}/{len(sample)}] {task.id} ...", flush=True)
         result = loop.run(task.prompt)
-        candidates.append(
-            {
-                "task_id": task.id,
-                "category": task.category,
-                "difficulty": task.difficulty,
-                "prompt": task.prompt,
-                "reference": task.reference,
-                "code": result.code,
-            }
-        )
-
-    candidates_path.write_text(_yaml_dump(candidates), encoding="utf-8")
-    labels_path.write_text(
-        _yaml_dump(
-            [
-                {"task_id": c["task_id"], "human": "", "note": ""}
-                for c in candidates
-            ]
-        ),
-        encoding="utf-8",
-    )
-    print(f"\ncandidates: {candidates_path}")
-    print(f"labels:     {labels_path} — fill `human: pass|fail` BLIND (see module docstring)")
-    print("then run:   python scripts/judge_calibration.py run")
+        codes[task.id] = result.code or ""
+    _write_calibration_files(_candidate_rows(sample, codes), candidates_path, labels_path)
+    print(f"source: live loop ({len(sample)} task(s))")
     return 0
 
 
@@ -254,6 +336,21 @@ def main() -> int:
     parser.add_argument("--n", type=int, default=30, help="sample size (default 30)")
     parser.add_argument("--seed", type=int, default=42, help="sampling seed (default 42)")
     parser.add_argument("--force", action="store_true", help="overwrite existing candidates")
+    parser.add_argument(
+        "--from-reports",
+        nargs="+",
+        default=None,
+        metavar="REPORT.json",
+        help="take candidates from eval report JSON files (comma-joined lists "
+        "allowed) instead of running the live loop — spends no tokens",
+    )
+    parser.add_argument(
+        "--ids",
+        default=None,
+        metavar="ID[,ID...]",
+        help="explicit task id list (order preserved); filters both the live "
+        "sample and the report-based selection",
+    )
     parser.add_argument("--candidates", default=None, help="custom candidates yaml path")
     parser.add_argument("--labels", default=None, help="custom labels yaml path")
     parser.add_argument("--report", default=None, help="write metrics yaml here")

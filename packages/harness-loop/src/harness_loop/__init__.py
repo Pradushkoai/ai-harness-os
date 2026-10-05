@@ -56,7 +56,7 @@ from .prompt import JUDGE_REFERENCE_SYSTEM_PROMPT, JUDGE_SYSTEM_PROMPT
 from .telemetry import LangfuseTelemetry
 from .types import IterationLog, LoopConfig, LoopResult
 
-__version__ = "0.10.1"
+__version__ = "0.10.2"
 
 __all__ = [
     "BslAgentLoop",

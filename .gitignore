@@ -32,3 +32,6 @@ htmlcov/
 .DS_Store
 Thumbs.db
 bsl-json.json
+
+# Judge calibration artifacts (human labels — never commit)
+calibration/

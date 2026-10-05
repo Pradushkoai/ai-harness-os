@@ -80,3 +80,70 @@ class TestPromptHash:
 
         payload = (JUDGE_REFERENCE_SYSTEM_PROMPT + "\x00" + JUDGE_SYSTEM_PROMPT).encode("utf-8")
         assert jc.prompt_hash() == hashlib.sha256(payload).hexdigest()[:12]
+
+
+class TestCollectFromReports:
+    """--from-reports: candidates from eval JSONs, judge fields ignored."""
+
+    @staticmethod
+    def _report(tmp_path, name, tasks_payload):
+        import json
+
+        path = tmp_path / name
+        path.write_text(
+            json.dumps({"total": len(tasks_payload), "tasks": tasks_payload}),
+            encoding="utf-8",
+        )
+        return path
+
+    def test_reads_codes_and_ignores_judge_fields(self, tmp_path):
+        report = self._report(
+            tmp_path,
+            "r.json",
+            [
+                {
+                    "id": "task-a",
+                    "code": "Код1",
+                    "judge_approved": True,
+                    "judge_score": 10,
+                    "exec": {"passed": True},
+                },
+                {"id": "task-b", "code": "", "judge_approved": False},  # empty code skipped
+                {"id": "task-c"},  # no code at all
+            ],
+        )
+        codes = jc.collect_from_reports([str(report)])
+        assert codes == {"task-a": "Код1"}
+
+    def test_comma_joined_paths_and_later_report_wins(self, tmp_path):
+        first = self._report(tmp_path, "a.json", [{"id": "task-a", "code": "старый"}])
+        second = self._report(tmp_path, "b.json", [{"id": "task-a", "code": "новый"}])
+        codes = jc.collect_from_reports([f"{first},{second}"])
+        assert codes == {"task-a": "новый"}
+
+
+class TestSelectSample:
+    def test_ids_order_preserved(self):
+        import argparse
+
+        tasks = load_tasks(bundled_tasks_path())
+        args = argparse.Namespace(ids="func-gcd,func-is-prime", n=30, seed=42)
+        sample = jc._select_sample(args, tasks)
+        assert [t.id for t in sample] == ["func-gcd", "func-is-prime"]
+
+    def test_ids_unknown_rejected(self):
+        import argparse
+
+        tasks = load_tasks(bundled_tasks_path())
+        args = argparse.Namespace(ids="no-such-task", n=30, seed=42)
+        with pytest.raises(SystemExit):
+            jc._select_sample(args, tasks)
+
+    def test_without_ids_seeded_sampling(self):
+        import argparse
+
+        tasks = load_tasks(bundled_tasks_path())
+        args = argparse.Namespace(ids=None, n=5, seed=42)
+        first = jc._select_sample(args, tasks)
+        second = jc._select_sample(args, tasks)
+        assert [t.id for t in first] == [t.id for t in second]
