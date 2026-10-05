@@ -414,6 +414,50 @@ class TestEval:
             cli._main(["eval", "--version"])
         assert excinfo.value.code == 0
 
+    # -- phase E: the eval path gets the same context socket as `run` --
+
+    def test_eval_context_project_feeds_generator(self, patched_eval_factories, tmp_path):
+        """--context-project: indexed context reaches the generator prompt."""
+
+        project = tmp_path / "project"
+        (project / "CommonModules").mkdir(parents=True)
+        (project / "CommonModules" / "ЦеныБарахла.bsl").write_text(
+            "Функция ЦенаТовара(Товар) Экспорт\n    Возврат 0;\nКонецФункции\n",
+            encoding="utf-8",
+        )
+        llm = patched_eval_factories["llm"]
+
+        code = cli.main([
+            "eval",
+            "--limit", "1",
+            "--context-project", str(project),
+        ])
+        assert code == 0
+        # context lands in the USER message (task prompt), not the system one
+        user_prompt = llm.calls[0][1].content if len(llm.calls[0]) > 1 else ""
+        assert "Контекст проекта" in user_prompt
+        assert "ЦеныБарахла" in user_prompt  # the indexed module reached the prompt
+
+    def test_eval_context_project_missing_dir_is_not_a_crash(
+        self, patched_eval_factories, capsys
+    ):
+        code = cli.main(["eval", "--limit", "1", "--context-project", "/no/such/dir"])
+
+        assert code == 0  # the provider reports a note; eval keeps going
+
+    def test_eval_context_disabled_env(
+        self, patched_eval_factories, monkeypatch, tmp_path, capsys
+    ):
+        monkeypatch.setenv("HARNESS_CONTEXT", "none")
+        code = cli.main([
+            "eval",
+            "--limit", "1",
+            "--context-project", str(tmp_path),
+        ])
+
+        assert code == 0
+        assert "HARNESS_CONTEXT=none" in capsys.readouterr().err
+
 
 class TestDoctorLangfuse:
     def test_doctor_mentions_langfuse(self, monkeypatch, capsys, tmp_path):

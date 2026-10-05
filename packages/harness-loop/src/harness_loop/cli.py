@@ -102,6 +102,17 @@ def _build_parser() -> argparse.ArgumentParser:
                     help="run only these difficulties (comma-separated: easy,medium,hard)")
     ev.add_argument("--limit", type=int, default=None, help="run only the first N tasks")
     ev.add_argument("--context", default=None, help="project context as text")
+    ev.add_argument(
+        "--context-project",
+        default=None,
+        help="project dir to index for context (phase C/E; adapter: HARNESS_CONTEXT env)",
+    )
+    ev.add_argument(
+        "--context-budget",
+        type=int,
+        default=8000,
+        help="token budget for the indexed project context (default 8000)",
+    )
     ev.add_argument("--max-iterations", type=int, default=3, help="LLM call budget per task")
     ev.add_argument("--chain", default=None,
                      help="router chain: coding|reasoning|cheap|judge (default: config)")
@@ -319,6 +330,7 @@ def _run_eval(args: argparse.Namespace) -> int:
         filename=args.filename,
         temperature=args.temperature,
         max_tokens=args.max_tokens,
+        context_budget=args.context_budget,
     )
 
     try:
@@ -329,8 +341,24 @@ def _run_eval(args: argparse.Namespace) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 
+    # phase E: the eval path gets the same context socket as `run` —
+    # the provider fills the empty per-task context, scored by task text
+    context_provider = None
+    project_path = getattr(args, "context_project", None) or ""
+    if project_path:
+        context_provider = resolve_provider()
+        if context_provider is None:
+            print("note: HARNESS_CONTEXT=none — project context disabled", file=sys.stderr)
+
     telemetry = telemetry_from_env() if getattr(args, "langfuse", False) else None
-    loop = BslAgentLoop(llm=llm, verifier=verifier, config=config, judge=judge)
+    loop = BslAgentLoop(
+        llm=llm,
+        verifier=verifier,
+        config=config,
+        judge=judge,
+        context_provider=context_provider,
+        project_path=project_path,
+    )
 
     executor = None
     if not getattr(args, "no_exec", False):
