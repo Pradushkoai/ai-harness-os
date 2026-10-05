@@ -124,6 +124,7 @@ class BslAgentLoop:
         context: str = "",
         reference: str = "",
         on_iteration: Optional[IterationCallback] = None,
+        env_note: str = "",
     ) -> LoopResult:
         """Run the loop for a natural-language task; never raises domain errors.
 
@@ -132,6 +133,12 @@ class BslAgentLoop:
         showing the etalon to the model would invalidate the eval (the model
         would copy it instead of solving the task). This invariant is tested
         in test_loop_judge.py.
+
+        `env_note` (engine knowledge, e.g. ONESCRIPT_ENGINE_NOTE) is prepended
+        to the effective context AFTER the provider fill: it must never
+        occupy the context socket itself, otherwise a non-empty note would
+        silently disable project context collection for every task with
+        checks (the E1/E-2 eval bug — caught by the E-3 token telemetry).
         """
 
         config = self._config
@@ -154,6 +161,12 @@ class BslAgentLoop:
             context_tokens = collected.tokens
             if not collected.empty:
                 context = collected.text
+
+        # engine note rides ALONGSIDE the (explicit or collected) context —
+        # it is knowledge about the runtime, not project context, and must
+        # not affect the provider-fill condition above
+        if env_note:
+            context = f"{env_note}\n\n{context}" if context else env_note
 
         for index in range(1, config.max_iterations + 1):
             if index == 1:

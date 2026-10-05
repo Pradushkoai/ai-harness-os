@@ -54,7 +54,7 @@ class TestPing:
     def test_reports_versions_and_missing_environment(self, services, no_engine):
         outcome = tool_ping(services, {})
         assert not outcome.is_error
-        assert "harness_mcp 0.1.1" in outcome.text
+        assert "harness_mcp 0.1.2" in outcome.text
         assert "harness_loop" in outcome.text
         assert "NOT FOUND (verify_module unavailable)" in outcome.text
         assert "NOT FOUND (L1 off)" in outcome.text

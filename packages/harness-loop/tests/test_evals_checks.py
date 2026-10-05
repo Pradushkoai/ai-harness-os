@@ -279,11 +279,30 @@ class TestEngineNote:
 
         run_eval([task], loop, executor=executor)
 
-        context = loop.run.call_args_list[0].kwargs["context"]
-        assert "OneScript 2.2.0" in context
-        assert "ДобавитьКДате" in context
-        # the task's own context survives after the note
-        assert context.endswith("старый контекст")
+        kwargs = loop.run.call_args_list[0].kwargs
+        # the note rides in env_note — the context socket stays FREE for the
+        # project provider (the E1/E-2 bug: note in context disabled it)
+        assert "OneScript 2.2.0" in kwargs["env_note"]
+        assert "ДобавитьКДате" in kwargs["env_note"]
+        assert kwargs["context"] == "старый контекст"
+
+    def test_ready_executor_note_does_not_fill_context_socket(self):
+        """Regression (E-3): note must not block the project context provider.
+
+        Before the fix run_eval stuffed ONESCRIPT_ENGINE_NOTE into `context`,
+        so loop.run saw a non-empty socket and never called the provider —
+        live evals with L1 ran without project context while CI (no real
+        OneScript) stayed green because executor_ready was False there.
+        """
+        loop = self._loop()
+        executor = FakeExecutor(outputs={"Ф(1)": "1"})
+        task = _task(checks=[ExecCheck(call="Ф(1)", expect="1")])
+
+        run_eval([task], loop, executor=executor)
+
+        kwargs = loop.run.call_args_list[0].kwargs
+        assert kwargs["context"] == ""  # socket free — provider may fill it
+        assert "OneScript 2.2.0" in kwargs["env_note"]
 
     def test_task_without_checks_gets_no_note(self):
         loop = self._loop()
@@ -292,9 +311,10 @@ class TestEngineNote:
 
         run_eval([task], loop, executor=executor)
 
-        context = loop.run.call_args_list[0].kwargs["context"]
-        assert "OneScript" not in context
-        assert context == "чистый контекст"
+        kwargs = loop.run.call_args_list[0].kwargs
+        assert "OneScript" not in kwargs["env_note"]
+        assert kwargs["env_note"] == ""
+        assert kwargs["context"] == "чистый контекст"
 
     def test_unavailable_executor_gets_no_note(self):
         loop = self._loop()
@@ -303,8 +323,9 @@ class TestEngineNote:
 
         run_eval([task], loop, executor=executor)
 
-        context = loop.run.call_args_list[0].kwargs["context"]
-        assert "OneScript" not in context
+        kwargs = loop.run.call_args_list[0].kwargs
+        assert "OneScript" not in kwargs["env_note"]
+        assert kwargs["context"] == ""
 
     def test_no_executor_gets_no_note(self):
         loop = self._loop()
@@ -312,8 +333,9 @@ class TestEngineNote:
 
         run_eval([task], loop)
 
-        context = loop.run.call_args_list[0].kwargs["context"]
-        assert "OneScript" not in context
+        kwargs = loop.run.call_args_list[0].kwargs
+        assert kwargs["env_note"] == ""
+        assert kwargs["context"] == ""
 
     def test_note_mentiones_only_probe_confirmed_gaps(self):
         from harness_loop.prompt import ONESCRIPT_ENGINE_NOTE

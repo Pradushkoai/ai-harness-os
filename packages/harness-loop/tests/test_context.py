@@ -179,6 +179,37 @@ class TestBuiltInIndexer:
         with pytest.raises(ValueError):
             BuiltInIndexer(max_files=0)
 
+    def test_collect_twice_reads_files_once(self, tmp_path, monkeypatch):
+        """E-3: one eval re-collects per task — the indexer instance caches.
+
+        The second collect() for the same root must not re-read module
+        heads (minutes of IO on a real 613+ module dump × 12 tasks).
+        """
+        module = tmp_path / "ОбщегоНазначения.bsl"
+        module.write_text(
+            "Функция КурсыВалют() Экспорт\n    Возврат 0;\nКонецФункции\n",
+            encoding="utf-8",
+        )
+        reads = {"n": 0}
+        real_read = Path.read_bytes
+
+        def counting_read(self, *args, **kwargs):
+            reads["n"] += 1
+            return real_read(self, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "read_bytes", counting_read)
+        indexer = BuiltInIndexer()
+        first = indexer.collect(str(tmp_path), "валюты курс")
+        second = indexer.collect(str(tmp_path), "другая задача — тот же проект")
+
+        assert reads["n"] == 1  # the file was parsed exactly once
+        # per-task relevance still differs (rendering is task-dependent),
+        # but the module came from the cache, not from a second read
+        assert "ОбщегоНазначения" in first.text
+        assert "ОбщегоНазначения" in second.text
+        assert first.modules_scanned == second.modules_scanned == 1
+        assert first.source == second.source == "builtin"
+
 
 class TestEstimateTokens:
     def test_roughly_four_chars_per_token(self):
@@ -328,6 +359,52 @@ class TestLoopWiring:
         result = loop.run("задача")
         assert result.iterations[0].context_source == ""
         assert result.iterations[0].context_tokens == 0
+
+    def test_env_note_rides_alongside_collected_context(self, tmp_path):
+        """Regression (E-3): the engine note must not eat the context socket.
+
+        run_eval used to prepend ONESCRIPT_ENGINE_NOTE into `context` before
+        calling loop.run — the non-empty socket then disabled provider
+        collection, so live evals (L1 available) never saw project context.
+        The note now arrives as `env_note` and rides AFTER the collected
+        project context; telemetry (context_source/tokens) reflects the
+        provider, not the note.
+        """
+
+        class NoteProvider:
+            name = "builtin"
+
+            def collect(self, project_path, task, max_tokens=8000):
+                return ContextResult(
+                    text="== контекст проекта ==\nФункция Эталон()",
+                    tokens=9,
+                    source="builtin",
+                )
+
+        loop = BslAgentLoop(
+            llm=FakeLLM(),
+            verifier=FakeVerifier(),
+            context_provider=NoteProvider(),
+            project_path=str(tmp_path),
+        )
+        result = loop.run("задача", env_note="СРЕДА: OneScript 2.2.0")
+
+        prompt = FakeLLM.last_user_prompt
+        # BOTH reached the generator; the note leads (as in 0.13.0),
+        # the project context follows — order is stable and tested
+        assert "контекст проекта" in prompt
+        assert "OneScript 2.2.0" in prompt
+        assert prompt.index("OneScript 2.2.0") < prompt.index("контекст проекта")
+        # telemetry describes the provider part only
+        assert result.iterations[0].context_source == "builtin"
+        assert result.iterations[0].context_tokens == 9
+
+    def test_env_note_alone_still_reaches_the_prompt(self):
+        loop = BslAgentLoop(llm=FakeLLM(), verifier=FakeVerifier())
+        result = loop.run("задача", env_note="СРЕДА: OneScript 2.2.0")
+
+        assert "OneScript 2.2.0" in FakeLLM.last_user_prompt
+        assert result.iterations[0].context_source == ""
 
 
 class FakeLLM:

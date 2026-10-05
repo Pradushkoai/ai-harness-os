@@ -35,7 +35,7 @@ class FakeLoop:
         self.calls: list[tuple[str, str]] = []
         self._results = results or {}
 
-    def run(self, task, context="", reference="", on_iteration=None):
+    def run(self, task, context="", reference="", on_iteration=None, env_note=""):
         self.calls.append((task, context))
         return self._results.get(task, _ok_result(task))
 

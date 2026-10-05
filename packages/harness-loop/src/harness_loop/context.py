@@ -139,6 +139,13 @@ class BuiltInIndexer:
         self._budget = token_budget
         self._max_files = max_files
         self._max_file_bytes = max_file_bytes
+        # per-instance caches: one eval re-collects context for every task,
+        # and re-reading + re-parsing the same 613+ module heads per task is
+        # minutes of pure IO on a real dump; the caches live with the indexer
+        # instance (one eval run) — staleness across runs is impossible when
+        # the provider is rebuilt per invocation (resolve_provider in cli)
+        self._files_cache: dict[str, list[Path]] = {}
+        self._info_cache: dict[tuple[str, str], _ModuleInfo] = {}
 
     def collect(
         self, project_path: str, task: str, max_tokens: int = DEFAULT_TOKEN_BUDGET
@@ -192,12 +199,15 @@ class BuiltInIndexer:
     # -- internals ---------------------------------------------------------
 
     def _scan(self, root: Path, words: list[str]) -> list[_ModuleInfo]:
-        found: list[_ModuleInfo] = []
-        files = sorted(
-            p
-            for p in root.rglob("*")
-            if p.suffix.lower() in (".bsl", ".os") and p.is_file()
-        )
+        root_key = str(root)
+        files = self._files_cache.get(root_key)
+        if files is None:
+            files = sorted(
+                p
+                for p in root.rglob("*")
+                if p.suffix.lower() in (".bsl", ".os") and p.is_file()
+            )
+            self._files_cache[root_key] = files
         # scale guard: reading every head is IO-bound, so when the project is
         # larger than the cap we rank by PATH relevance BEFORE reading — the
         # cap then cuts the least relevant files, not the alphabetically last
@@ -209,7 +219,15 @@ class BuiltInIndexer:
                 return (-sum(1 for w in words if w in rel), rel)
 
             files = sorted(files, key=path_rank)[: self._max_files]
+        found: list[_ModuleInfo] = []
         for path in files[: self._max_files]:
+            # root-relative, forward slashes — readable for the LLM and
+            # independent of where the project happens to live
+            relative = path.relative_to(root).as_posix()
+            cached = self._info_cache.get((root_key, relative))
+            if cached is not None:
+                found.append(cached)
+                continue
             try:
                 # utf-8-sig strips the BOM (every module of a real EDT dump
                 # carries one; a leading \ufeff is not matched by \s and the
@@ -231,10 +249,9 @@ class BuiltInIndexer:
                 for kind, name, params, exported in matches
             )
             metadata = tuple(dict.fromkeys(_META_RE.findall(head)))[:_MAX_METADATA_PER_MODULE]
-            # root-relative, forward slashes — readable for the LLM and
-            # independent of where the project happens to live
-            relative = path.relative_to(root).as_posix()
-            found.append(_ModuleInfo(relative, signatures, metadata, sig_total=sig_total))
+            info = _ModuleInfo(relative, signatures, metadata, sig_total=sig_total)
+            self._info_cache[(root_key, relative)] = info
+            found.append(info)
         return found
 
     @staticmethod

@@ -2,6 +2,11 @@
 
 Формат — [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/), версионирование — [SemVer](https://semver.org/lang/ru/).
 
+## [0.1.2] — 2026-10-05
+
+### Changed
+- Тестовый двойник `FakeLoop` следует новому контракту `BslAgentLoop.run(env_note=...)` (harness-loop 0.13.1): до фикса engine-note занимал контекст-сокет в eval — теперь отдельный параметр; двойник его принимает, поведение тулингов MCP не изменилось.
+
 ## [0.1.1] — 2026-10-05
 
 ### Changed

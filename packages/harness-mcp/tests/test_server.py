@@ -70,7 +70,7 @@ class TestServerObject:
             {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "ping"}}
         )
         text = response["result"]["content"][0]["text"]
-        assert "harness_mcp 0.1.1" in text
+        assert "harness_mcp 0.1.2" in text
 
 
 class TestSubprocessSmoke:
@@ -173,4 +173,4 @@ class TestMainVersion:
 
         rc = main(["--version"])
         assert rc == 0
-        assert "harness-mcp 0.1.1" in capsys.readouterr().out
+        assert "harness-mcp 0.1.2" in capsys.readouterr().out

@@ -581,12 +581,13 @@ def run_eval(
         # the generator must know the target engine (OneScript, not the 1C
         # platform) — same knowledge a real developer has about the target.
         # Tasks without checks never reach execution, so they stay untouched.
-        context = task.context
-        if executor_ready and task.checks:
-            context = "\n\n".join(
-                part for part in (ONESCRIPT_ENGINE_NOTE, context) if part
-            )
-        result = loop.run(task.prompt, context=context, reference=reference)
+        # The note rides in `env_note`, NOT in `context`: stuffing it into
+        # the context socket made it non-empty and silently disabled project
+        # context collection for every task with checks (E1/E-2 eval bug).
+        env_note = ONESCRIPT_ENGINE_NOTE if executor_ready and task.checks else ""
+        result = loop.run(
+            task.prompt, context=task.context, reference=reference, env_note=env_note
+        )
         exec_outcome = None
         if executor_ready and task.checks:
             exec_outcome = executor.run_checks(result.code, list(task.checks))
