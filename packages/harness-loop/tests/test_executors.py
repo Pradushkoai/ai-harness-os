@@ -14,7 +14,9 @@ from harness_loop.executors import (
     ExecCheck,
     OneScriptRunner,
     build_driver,
+    extract_query_texts,
     normalize_output,
+    normalize_query_text,
     parse_driver_output,
     sanitize_env,
 )
@@ -330,3 +332,155 @@ class TestHttpStub:
         http_probe = ExecCheck(call="Ф()", expect="1", http_stub=True)
         runner.run_checks("Функция Ф()\nКонецФункции", [http_probe])
         assert started == [1]
+
+
+class TestQueryTextChecks:
+    """Static query-text verification (roadmap 2.1 phase A: 5 query tasks)."""
+
+    MODULE = (
+        "Функция ТекстЗапросаНоменклатура()\n"
+        "    Запрос = Новый Запрос;\n"
+        '    Запрос.Текст =\n'
+        '    "ВЫБРАТЬ\n'
+        '    |    Номенклатура.Ссылка КАК Ссылка,\n'
+        '    |ИЗ\n'
+        '    |    Справочник.Номенклатура КАК Номенклатура";\n'
+        "    Возврат Запрос.Текст;\n"
+        "КонецФункции\n"
+    )
+
+    EXPECT = (
+        "ВЫБРАТЬ\n"
+        "|    Номенклатура.Ссылка КАК Ссылка,\n"
+        "|ИЗ\n"
+        "|    Справочник.Номенклатура КАК Номенклатура"
+    )
+
+    def test_extract_finds_query_literals(self):
+        texts = extract_query_texts(self.MODULE)
+        assert len(texts) == 1
+        assert "ВЫБРАТЬ" in texts[0]
+        assert "Справочник.Номенклатура" in texts[0]
+
+    def test_extract_ignores_plain_strings(self):
+        code = 'Сообщить("ВЫБРАТЬ нет тут");'  # ВЫБРАТЬ есть — квалифицируется
+        assert len(extract_query_texts(code)) == 1
+        code2 = 'А = "обычная строка"; Б = "ещё одна";'
+        assert extract_query_texts(code2) == []
+
+    def test_extract_unescapes_doubled_quotes(self):
+        code = '"ВЫБРАТЬ поле ""Имя"" ИЗ Таблица"'
+        texts = extract_query_texts(code)
+        assert '""' not in texts[0]
+        assert '"Имя"' in texts[0]
+
+    def test_normalize_strips_pipes_and_case(self):
+        norm = normalize_query_text("ВЫБРАТЬ\n|  А КАК Б\n|  ИЗ  С")
+        assert norm == "выбрать а как б из с"
+
+    def test_normalize_collapses_whitespace_runs(self):
+        assert normalize_query_text("ВЫБРАТЬ    *   ИЗ\tТ") == "выбрать * из т"
+
+    def test_empty_call_allowed_for_query_check(self):
+        check = ExecCheck(query_text=True, expect="ВЫБРАТЬ")
+        assert check.query_text is True
+
+    def test_query_check_still_validates_call_type(self):
+        with pytest.raises(ValueError, match="call"):
+            ExecCheck(query_text=True, call=42, expect="")
+
+    def test_pure_query_task_never_launches_engine(self, tmp_path, monkeypatch):
+        # a binary that would explode if ever executed: the static path
+        # must not spawn ANY process for query-only checks
+        runner = OneScriptRunner(str(tmp_path / "no-such-oscript"))
+        check = ExecCheck(query_text=True, expect=self.EXPECT)
+        outcome = runner.run_checks(self.MODULE, [check])
+        assert outcome.ran is True
+        assert outcome.engine == "static-query"
+        assert outcome.passed is True
+        assert outcome.results[0].passed is True
+        assert "номенклатура" in outcome.results[0].actual
+
+    def test_pure_query_task_fails_when_literal_missing(self, tmp_path):
+        runner = OneScriptRunner(str(tmp_path / "no-such-oscript"))
+        check = ExecCheck(query_text=True, expect="ВЫБРАТЬ\n|ИЗ\n|    Другая.Таблица")
+        outcome = runner.run_checks(self.MODULE, [check])
+        assert outcome.passed is False
+        assert "не построен" in outcome.results[0].error
+
+    def test_driver_skips_query_blocks(self):
+        runtime = ExecCheck(call="Ф(1)", expect="1")
+        query = ExecCheck(query_text=True, expect="ВЫБРАТЬ")
+        script = build_driver("Функция Ф()\nКонецФункции", [runtime, query])
+        assert "__CHK1__" in script
+        assert "__CHK2__" not in script  # query check has no driver block
+
+    def test_mixed_results_keep_check_order(self, tmp_path):
+        # engine outage branch: runtime results are empty, query verdicts
+        # still surface (telemetry survives a dead engine)
+        runner = OneScriptRunner(str(tmp_path / "no-such-oscript"))
+        runtime = ExecCheck(call="Ф(1)", expect="1")
+        query = ExecCheck(query_text=True, expect=self.EXPECT)
+        outcome = runner.run_checks(self.MODULE, [runtime, query])
+        assert outcome.ran is True
+        assert outcome.passed is False  # engine failure dominates
+        assert [r.call for r in outcome.results] == ["Ф(1)", "(текст запроса)"]
+        assert outcome.results[1].passed is True  # static verdict computed anyway
+
+    def test_merge_preserves_check_order(self):
+        runtime = ExecCheck(call="Ф(1)", expect="1")
+        query = ExecCheck(query_text=True, expect="ВЫБРАТЬ")
+        rr = ["R1"]
+        qr = ["Q1"]
+        merged = OneScriptRunner._merge_results([runtime, query, runtime], rr * 2, qr)
+        assert merged == ["R1", "Q1", "R1"]
+
+
+class TestQueryCheckParsing:
+    def test_query_check_without_call_loads(self, tmp_path):
+        path = tmp_path / "tasks.yaml"
+        path.write_text(
+            "version: 1\ntasks:\n"
+            "  - id: t1\n    prompt: задача\n"
+            "    reference: |\n      Функция Ф()\n          Возврат 1;\n      КонецФункции\n"
+            "    checks:\n"
+            "      - query_text: true\n"
+            '        expect: "ВЫБРАТЬ поле ИЗ Таблица"\n',
+            encoding="utf-8",
+        )
+        from harness_loop.evals import load_tasks
+
+        check = load_tasks(path)[0].checks[0]
+        assert check.query_text is True
+        assert check.call == ""
+        assert "ВЫБРАТЬ" in check.expect
+
+    def test_non_query_check_still_requires_call(self, tmp_path):
+        path = tmp_path / "tasks.yaml"
+        path.write_text(
+            "version: 1\ntasks:\n"
+            "  - id: t1\n    prompt: задача\n"
+            "    checks:\n"
+            '      - expect: "5"\n',
+            encoding="utf-8",
+        )
+        from harness_loop.evals import load_tasks
+
+        with pytest.raises(ValueError, match="call"):
+            load_tasks(path)
+
+    def test_bundled_query_tasks_carry_checks(self):
+        from harness_loop.evals import bundled_tasks_path, load_tasks
+
+        tasks = load_tasks(bundled_tasks_path())
+        query_tasks = [t for t in tasks if t.category == "query"]
+        assert len(query_tasks) == 5
+        assert all(t.checks and t.checks[0].query_text for t in query_tasks)
+
+    def test_bundled_coverage_reaches_ceiling(self):
+        from harness_loop.evals import bundled_tasks_path, load_tasks
+
+        tasks = load_tasks(bundled_tasks_path())
+        with_checks = sum(1 for t in tasks if t.checks)
+        # ceiling: 70 - 4 СКД - 2 struct (semantic divergence) = 64 (91%)
+        assert with_checks == 64

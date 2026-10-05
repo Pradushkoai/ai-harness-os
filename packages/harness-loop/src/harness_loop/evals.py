@@ -425,7 +425,16 @@ def _parse_checks(raw_checks, task_id: str, source) -> tuple:
         )
     checks = []
     for index, raw in enumerate(raw_checks, start=1):
-        if not isinstance(raw, dict) or "call" not in raw:
+        if not isinstance(raw, dict):
+            raise ValueError(
+                f"task {task_id}: check #{index} must be a mapping ({source})"
+            )
+        query_text = raw.get("query_text", False)
+        if not isinstance(query_text, bool):
+            raise ValueError(
+                f"task {task_id}: check #{index} query_text must be true/false ({source})"
+            )
+        if "call" not in raw and not query_text:
             raise ValueError(
                 f"task {task_id}: check #{index} must be a mapping with 'call' ({source})"
             )
@@ -463,12 +472,13 @@ def _parse_checks(raw_checks, task_id: str, source) -> tuple:
         try:
             checks.append(
                 ExecCheck(
-                    call=str(raw["call"]),
+                    call=str(raw.get("call") or ""),
                     expect=expect,
                     setup=setup,
                     case_fold=case_fold,
                     proc=proc,
                     http_stub=http_stub,
+                    query_text=query_text,
                 )
             )
         except ValueError as exc:

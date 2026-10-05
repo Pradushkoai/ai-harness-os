@@ -149,7 +149,7 @@ class TestSubprocessSmoke:
         # benchmark_info: the real bundled set
         bench = by_id[4]["result"]
         assert "70 tasks" in bench["content"][0]["text"]
-        assert "59/70 (84%)" in bench["content"][0]["text"]
+        assert "64/70 (91%)" in bench["content"][0]["text"]
         # verify_module without java -> honest tool error, protocol intact
         verify = by_id[5]["result"]
         assert verify["isError"] is True

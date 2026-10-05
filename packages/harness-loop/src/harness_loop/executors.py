@@ -108,15 +108,20 @@ class ExecCheck:
             `Новый HTTPСоединение("127.0.0.1", ПортСервера)`).
     """
 
-    call: str
+    call: str = ""
     expect: str = ""
     setup: str = ""
     case_fold: bool = False
     proc: bool = False
     http_stub: bool = False
+    query_text: bool = False
 
     def __post_init__(self) -> None:
-        if not isinstance(self.call, str) or not self.call.strip():
+        if not isinstance(self.call, str):
+            raise ValueError(
+                f"ExecCheck.call must be a string, got {self.call!r}"
+            )
+        if not self.query_text and not self.call.strip():
             raise ValueError(
                 f"ExecCheck.call must be a non-empty BSL expression, got {self.call!r}"
             )
@@ -124,6 +129,10 @@ class ExecCheck:
             raise ValueError(f"ExecCheck.expect must be a string, got {self.expect!r}")
         if not isinstance(self.setup, str):
             raise ValueError(f"ExecCheck.setup must be a string, got {self.setup!r}")
+        if not isinstance(self.query_text, bool):
+            raise ValueError(
+                f"ExecCheck.query_text must be true/false, got {self.query_text!r}"
+            )
 
 
 @dataclass(frozen=True)
@@ -196,6 +205,56 @@ def sanitize_env(env: Optional[dict] = None) -> dict:
 
     source = os.environ if env is None else env
     return {k: v for k, v in source.items() if not _SECRET_ENV.search(k)}
+
+
+# -- query-text checks (roadmap 2.1, phase A: 5 query tasks get an L1) ------------
+#
+# The Запрос object does not exist in vanilla OneScript ("Type is not
+# defined" — live probe 2026-10-05), so query tasks cannot be EXECUTED.
+# The roadmap's fallback applies: the check verifies that the module
+# BUILDS the expected query text, by extracting query literals from the
+# generated code and comparing them normalized (keyword case, | line
+# prefixes, whitespace runs). This is a static verification inside the
+# L1 driver — the engine still gates the whole oracle, so `ran=False`
+# semantics (engine missing -> L1 not measured) stay uniform.
+
+_BSL_STRING_RE = re.compile(r'"((?:[^"]|"")*)"', re.S)
+_QUERY_KEYWORD_RE = re.compile(r"ВЫБРАТЬ", re.I)
+
+
+def extract_query_texts(module_code: str) -> list:
+    """All query-looking string literals of a module, in code order.
+
+    A literal qualifies when it contains ВЫБРАТЬ (case-insensitive) —
+    every 1С query starts with it. Multiline literals written with the
+    canonical `|` line prefixes are handled: the prefixes are stripped by
+    normalize_query_text later. Doubled quotes inside the literal are
+    unescaped.
+    """
+
+    texts = []
+    for match in _BSL_STRING_RE.finditer(module_code):
+        literal = match.group(1).replace('""', '"')
+        if _QUERY_KEYWORD_RE.search(literal):
+            texts.append(literal)
+    return texts
+
+
+def normalize_query_text(text: str) -> str:
+    """Canonical form for comparing built query texts.
+
+    Lowercase, `|` line prefixes -> spaces, every whitespace run -> one
+    space, blank lines dropped: only the query's word sequence remains.
+    """
+
+    lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    kept = []
+    for line in lines:
+        line = line.replace("|", " ")
+        line = re.sub(r"[ \t]+", " ", line).strip()
+        if line:
+            kept.append(line)
+    return " ".join(kept).lower()
 
 
 # Deterministic responses of the L1 HTTP stub (roadmap 2.1, phase A).
@@ -311,6 +370,9 @@ def build_driver(
     When `server_port` is given (any check with http_stub=True), a
     `ПортСервера = N;` prelude is injected right after the module code —
     the only sanctioned way for checks to learn the stub server address.
+    Query-text checks are NOT executed (no driver block is built for
+    them): the Запрос object does not exist in vanilla OneScript, their
+    verdict comes from the static extractor instead.
     """
 
     lines = [module_code.rstrip(), ""]
@@ -319,6 +381,8 @@ def build_driver(
         lines.append(f"ПортСервера = {server_port}; // порт локального стаб-сервера исполнителя L1")
     lines.append("")
     for index, check in enumerate(checks, start=1):
+        if check.query_text:
+            continue  # static verdict, no driver block
         marker = f"__CHK{index}__"
         setup = [
             "    " + stmt.rstrip(";") + ";"
@@ -487,6 +551,57 @@ class OneScriptRunner:
             if stub is not None:
                 stub.close()
 
+    def _query_results(
+        self, module_code: str, query_checks: list[ExecCheck]
+    ) -> list[CheckResult]:
+        """Static verdicts for query_text checks (no engine run)."""
+
+        extracted = [normalize_query_text(t) for t in extract_query_texts(module_code)]
+        results: list[CheckResult] = []
+        for check in query_checks:
+            expected = normalize_query_text(check.expect)
+            matched = next((t for t in extracted if t == expected), "")
+            actual = matched or (extracted[0] if extracted else "")
+            passed = bool(matched)
+            results.append(
+                CheckResult(
+                    call=check.call or "(текст запроса)",
+                    expect=check.expect,
+                    actual=actual or "(литерал с ВЫБРАТЬ не найден в модуле)",
+                    passed=passed,
+                    error="" if passed else
+                    "текст запроса не построен: среди литералов модуля нет "
+                    "совпадающего с ожидаемым (нормализованное сравнение)",
+                )
+            )
+        return results
+
+    @staticmethod
+    def _runtime_stub_results(
+        runtime_checks: list[ExecCheck], error: str
+    ) -> list[CheckResult]:
+        """Placeholder results when the engine never produced values."""
+
+        return [
+            CheckResult(call=c.call, expect=c.expect, actual="", passed=False, error=error)
+            for c in runtime_checks
+        ]
+
+    @staticmethod
+    def _merge_results(
+        checks: list[ExecCheck],
+        runtime_results: list[CheckResult],
+        query_results: list[CheckResult],
+    ) -> list[CheckResult]:
+        """Interleave static and runtime results back into check order."""
+
+        runtime_iter = iter(runtime_results)
+        query_iter = iter(query_results)
+        return [
+            next(query_iter) if check.query_text else next(runtime_iter)
+            for check in checks
+        ]
+
     def _run_with_stub(
         self,
         module_code: str,
@@ -494,6 +609,21 @@ class OneScriptRunner:
         timeout: float,
         stub: Optional[StubHttpServer],
     ) -> ExecOutcome:
+        runtime_checks = [c for c in checks if not c.query_text]
+        query_checks = [c for c in checks if c.query_text]
+        query_results = self._query_results(module_code, query_checks)
+
+        if not runtime_checks:
+            # pure query-text task: the verdict is fully static, nothing to
+            # execute (the Запрос object does not exist in vanilla OneScript)
+            return ExecOutcome(
+                ran=True,
+                engine="static-query",
+                passed=all(r.passed for r in query_results),
+                results=self._merge_results(checks, [], query_results),
+                duration_ms=0.0,
+            )
+
         script = build_driver(module_code, checks, server_port=stub.port if stub else None)
         workdir = tempfile.mkdtemp(prefix="harness-l1-")
         script_path = Path(workdir) / "driver.os"
@@ -516,6 +646,13 @@ class OneScriptRunner:
                 engine=self.name,
                 passed=False,
                 error=f"таймаут исполнения: {self._timeout:.0f}с (вероятен бесконечный цикл)",
+                results=self._merge_results(
+                    checks,
+                    self._runtime_stub_results(
+                        runtime_checks, "таймаут исполнения движка"
+                    ),
+                    query_results,
+                ),
                 duration_ms=time.perf_counter() - started,
             )
         except OSError as exc:  # engine binary vanished mid-run
@@ -524,17 +661,29 @@ class OneScriptRunner:
                 engine=self.name,
                 passed=False,
                 error=f"ошибка запуска движка: {exc}",
+                results=self._merge_results(
+                    checks,
+                    self._runtime_stub_results(
+                        runtime_checks, f"движок не запускался: {exc}"
+                    ),
+                    query_results,
+                ),
                 duration_ms=time.perf_counter() - started,
             )
+        finally:
+            shutil.rmtree(workdir, ignore_errors=True)
         duration_ms = (time.perf_counter() - started) * 1000.0
         stdout = completed.stdout or ""
         if completed.returncode != 0:
             stderr = (completed.stderr or "").strip()
-            outcome = self._outcome_from_stdout(stdout, checks, duration_ms)
+            outcome = self._outcome_from_stdout(stdout, runtime_checks, duration_ms)
             outcome.error = (
                 f"движок завершился с кодом {completed.returncode}"
                 + (f": {stderr[:500]}" if stderr else "")
             )
             outcome.passed = False
+            outcome.results = self._merge_results(checks, outcome.results, query_results)
             return outcome
-        return self._outcome_from_stdout(stdout, checks, duration_ms)
+        outcome = self._outcome_from_stdout(stdout, runtime_checks, duration_ms)
+        outcome.results = self._merge_results(checks, outcome.results, query_results)
+        return outcome

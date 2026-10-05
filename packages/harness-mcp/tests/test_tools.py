@@ -66,7 +66,7 @@ class TestBenchmarkInfo:
         assert not outcome.is_error
         assert "70 tasks" in outcome.text
         assert "15 categories" in outcome.text
-        assert "59/70 (84%)" in outcome.text
+        assert "64/70 (91%)" in outcome.text
         assert "query x5" in outcome.text  # honest limits documented
 
 
