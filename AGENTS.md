@@ -45,6 +45,7 @@ packages/
 │       ├── evals.py           # mini SWE-bench-BSL: задачи, раннер, отчёты
 │       ├── eval_data/         # tasks_v0.yaml — 70 задач (15 категорий), 59 с L1-чеками
 │       ├── executors.py       # L1-оракул: ExecutorPort + OneScriptRunner (изоляция, таймаут)
+│       ├── context.py         # ContextProviderPort + BuiltInIndexer + McpIndexerBackend (фаза C)
 │       ├── loop.py            # BslAgentLoop + RouterPort (Router→LLMPort)
 │       └── cli.py             # harness-loop run / eval / doctor
 ├── agents-md/                 # генератор AGENTS.md (зависимостей нет)

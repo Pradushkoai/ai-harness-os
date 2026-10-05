@@ -35,6 +35,14 @@ consume the same ports, so this code is the reference behaviour, not a
 dead end.
 """
 
+from .context import (
+    BuiltInIndexer,
+    ContextProviderPort,
+    ContextResult,
+    McpIndexerBackend,
+    collect_context,
+    resolve_provider,
+)
 from .evals import BslTask, EvalReport, TaskOutcome, load_tasks, run_eval
 from .extract import extract_bsl_code
 from .judge import Judge, JudgeConfig, JudgeVerdict, parse_judge_response
@@ -48,16 +56,20 @@ from .prompt import JUDGE_REFERENCE_SYSTEM_PROMPT, JUDGE_SYSTEM_PROMPT
 from .telemetry import LangfuseTelemetry
 from .types import IterationLog, LoopConfig, LoopResult
 
-__version__ = "0.8.0"
+__version__ = "0.9.0"
 
 __all__ = [
     "BslAgentLoop",
     "BslTask",
+    "BuiltInIndexer",
+    "ContextProviderPort",
+    "ContextResult",
     "EvalReport",
     "Judge",
     "JudgeConfig",
     "JudgeVerdict",
     "LangfuseTelemetry",
+    "McpIndexerBackend",
     "RouterPort",
     "SYSTEM_PROMPT",
     "TaskOutcome",
@@ -66,10 +78,12 @@ __all__ = [
     "JUDGE_SYSTEM_PROMPT",
     "LoopConfig",
     "LoopResult",
+    "collect_context",
     "extract_bsl_code",
     "fix_prompt",
     "load_tasks",
     "parse_judge_response",
+    "resolve_provider",
     "run_eval",
     "task_prompt",
     "__version__",

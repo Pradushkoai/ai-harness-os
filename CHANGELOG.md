@@ -2,6 +2,12 @@
 
 Формат — [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/). История отдельных пакетов — в их собственных CHANGELOG.
 
+## [0.14.0] — 2026-10-05
+
+### Added
+- **harness-loop 0.9.0 — контекстный слой (дорожная карта 2.1, фаза C):** порт `ContextProviderPort` + `BuiltInIndexer` (stdlib: сигнатуры/метаданные/релевантность/токен-бюджет 8000) + `McpIndexerBackend` (subprocess-клиент к внешнему code-index MCP-серверу, тихий фоллбек на встроенный с предупреждением). Выбор адаптера — `HARNESS_CONTEXT` (одна переменная). Проводка: `--context-project`/`--context-budget` в CLI, `run_loop(project_path=…)` в MCP-тулинге; источник и размер контекста — в каждом `IterationLog`. A/B-демо `scripts/ab_context.py` (синтетическое дерево из категорий бенчмарка; живые руки требуют LLM-ключей — без ключей печатает дерево и образец контекста).
+- `harness-loop doctor` показывает бэкенд контекста и его состояние.
+
 ## [0.13.0] — 2026-10-05
 
 ### Added

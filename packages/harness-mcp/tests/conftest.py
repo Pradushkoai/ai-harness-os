@@ -92,7 +92,7 @@ def services(fake_loop, fake_verifier):
     """Services wired to fakes — no network, no java, no keys."""
 
     return HarnessServices(
-        loop_factory=lambda: fake_loop,
+        loop_factory=lambda project_path="": fake_loop,
         verifier_factory=lambda: fake_verifier,
         state=SessionState(now=lambda: 1000.0),
     )

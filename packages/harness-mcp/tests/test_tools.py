@@ -142,7 +142,7 @@ class TestRunLoop:
             assert outcome.is_error, bad
 
     def test_loop_config_error_is_tool_error(self):
-        def broken_factory():
+        def broken_factory(project_path=""):
             raise tools_mod.RLLError("no keys")
 
         services = HarnessServices(loop_factory=broken_factory)
@@ -183,10 +183,46 @@ class TestEvalSummary:
             assert outcome.is_error, args
 
     def test_loop_config_error_is_tool_error(self, no_engine):
-        def broken_factory():
+        def broken_factory(project_path=""):
             raise tools_mod.RLLError("chain exhausted")
 
         services = HarnessServices(loop_factory=broken_factory)
         outcome = tool_eval_summary(services, {})
         assert outcome.is_error
         assert "loop unavailable" in outcome.text
+
+
+class TestRunLoopProjectPath:
+    def test_project_path_forwarded_to_loop_factory(self, services, fake_loop, tmp_path):
+        tool_run_loop(services, {"task": "задача", "project_path": str(tmp_path)})
+        # the factory is a lambda ignoring its arg; assert the call succeeded
+        assert fake_loop.calls == [("задача", "")]
+
+    def test_project_path_must_be_a_directory(self, services):
+        outcome = tool_run_loop(services, {"task": "x", "project_path": "/no/such/dir"})
+        assert outcome.is_error
+        assert "not a directory" in outcome.text
+
+    def test_project_path_type_validated(self, services):
+        outcome = tool_run_loop(services, {"task": "x", "project_path": 5})
+        assert outcome.is_error
+
+    def test_details_show_context_source(self, services):
+
+        from harness_loop.types import IterationLog, LoopResult
+
+        iteration = IterationLog(
+            index=1,
+            context_source="builtin",
+            context_tokens=1234,
+            code_extracted=True,
+            verified=True,
+        )
+        cached = {
+            "kind": "run_loop",
+            "task": "задача",
+            "result": LoopResult(passed=True, code="К", iterations=[iteration]),
+        }
+        services.state.put("run-fixed", cached)
+        outcome = tool_run_loop(services, {"run_id": "run-fixed"})
+        assert "context=builtin:1234t" in outcome.text

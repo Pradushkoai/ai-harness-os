@@ -27,6 +27,7 @@ from bsl_verify.runner import find_jar, find_java, java_version
 from russian_llm_pack import RLLError, Router, RouterConfig, load_config
 
 from . import __version__
+from .context import resolve_provider
 from .evals import bundled_tasks_path, load_tasks, run_eval
 from .executors import OneScriptRunner
 from .judge import Judge, JudgeConfig
@@ -52,6 +53,17 @@ def _build_parser() -> argparse.ArgumentParser:
     run.add_argument("task", help="task description in natural language")
     run.add_argument("--context", default=None, help="project context as text")
     run.add_argument("--context-file", default=None, help="read project context from a file")
+    run.add_argument(
+        "--context-project",
+        default=None,
+        help="project dir to index for context (phase C; adapter: HARNESS_CONTEXT env)",
+    )
+    run.add_argument(
+        "--context-budget",
+        type=int,
+        default=8000,
+        help="token budget for the indexed project context (default 8000)",
+    )
     run.add_argument("--max-iterations", type=int, default=3, help="LLM call budget (default 3)")
     run.add_argument("--chain", default=None,
                      help="router chain: coding|reasoning|cheap|judge (default: config)")
@@ -194,6 +206,7 @@ def _run_run(args: argparse.Namespace) -> int:
         filename=args.filename,
         temperature=args.temperature,
         max_tokens=args.max_tokens,
+        context_budget=args.context_budget,
     )
 
     try:
@@ -204,8 +217,22 @@ def _run_run(args: argparse.Namespace) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 
+    context_provider = None
+    project_path = getattr(args, "context_project", None) or ""
+    if project_path:
+        context_provider = resolve_provider()
+        if context_provider is None:
+            print("note: HARNESS_CONTEXT=none — project context disabled", file=sys.stderr)
+
     telemetry = telemetry_from_env() if getattr(args, "langfuse", False) else None
-    loop = BslAgentLoop(llm=llm, verifier=verifier, config=config, judge=judge)
+    loop = BslAgentLoop(
+        llm=llm,
+        verifier=verifier,
+        config=config,
+        judge=judge,
+        context_provider=context_provider,
+        project_path=project_path,
+    )
 
     def _progress(log) -> None:
         if telemetry is not None:
@@ -410,6 +437,23 @@ def _run_doctor(args: argparse.Namespace) -> int:
     else:
         print("  oscript:  NOT FOUND — L1 не измеряется (L0+L2 работают); "
               "установи OneScript или укажи OSCRIPT_PATH")
+
+    print("Project context (phase C, optional):")
+    import os as _os
+    backend = (_os.environ.get("HARNESS_CONTEXT") or "builtin").strip().lower()
+    if backend == "none":
+        print("  backend:  disabled (HARNESS_CONTEXT=none)")
+    elif backend == "mcp":
+        mcp_path = _os.environ.get("CODE_INDEX_MCP_PATH", "")
+        if mcp_path:
+            print(f"  backend:  mcp ({mcp_path})")
+            if not (Path(mcp_path).is_file()):
+                print("           ! binary not found — will fall back to builtin")
+        else:
+            print("  backend:  mcp requested but CODE_INDEX_MCP_PATH is not set -> builtin")
+    else:
+        print("  backend:  builtin indexer (rglob .bsl/.os, signatures + metadata)")
+    print("  use:     harness-loop run \"task\" --context-project <dir>")
 
     print("Telemetry (optional):")
     import os

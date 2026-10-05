@@ -26,6 +26,8 @@ class LoopConfig:
             the prompt from exploding on noisy modules.
         temperature: optional override forwarded to the LLM port.
         max_tokens: optional override forwarded to the LLM port.
+        context_budget: token budget for the project context provider (phase C);
+            only meaningful together with a context_provider + project_path.
     """
 
     max_iterations: int = 3
@@ -33,6 +35,7 @@ class LoopConfig:
     max_feedback_lines: int = 25
     temperature: Optional[float] = None
     max_tokens: Optional[int] = None
+    context_budget: int = 8000  # token budget for the project context (phase C)
 
     def __post_init__(self) -> None:
         if self.max_iterations < 1:
@@ -64,6 +67,8 @@ class IterationLog:
     judge_verdict: Optional[bool] = None  # True pass / False fail / None not run
     judge_issues: list = field(default_factory=list)  # list[str], capped
     judge_ms: float = 0.0
+    context_source: str = ""  # builtin | mcp — who filled the context (phase C)
+    context_tokens: int = 0  # its size, for observability
 
     def to_dict(self) -> dict:
         return {
@@ -84,6 +89,8 @@ class IterationLog:
             "judge_verdict": self.judge_verdict,
             "judge_issues": list(self.judge_issues),
             "judge_ms": round(self.judge_ms, 1),
+            "context_source": self.context_source,
+            "context_tokens": self.context_tokens,
         }
 
 

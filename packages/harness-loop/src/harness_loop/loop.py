@@ -39,6 +39,8 @@ from typing import Callable, Optional
 from bsl_verify import BslVerifyError, BslVerifier, Severity, VerifyResult
 from russian_llm_pack import ChatMessage, RLLError, Router
 
+from .context import collect_context
+
 from .extract import extract_bsl_code
 from .judge import Judge, JudgeVerdict, judge_feedback
 from .prompt import (
@@ -98,11 +100,15 @@ class BslAgentLoop:
         verifier: BslVerifier,
         config: Optional[LoopConfig] = None,
         judge: Optional[Judge] = None,
+        context_provider=None,
+        project_path: str = "",
     ) -> None:
         self._llm = llm
         self._verifier = verifier
         self._config = config or LoopConfig()
         self._judge = judge
+        self._context_provider = context_provider
+        self._project_path = project_path
 
     @property
     def config(self) -> LoopConfig:
@@ -135,6 +141,20 @@ class BslAgentLoop:
         feedback_from_judge = False  # next fix prompt shape (verifier vs judge)
         last_judge: Optional[JudgeVerdict] = None  # survives vetoes for reports
 
+        # Phase C: fill the empty context socket from the real project.
+        # An explicit `context` argument always wins; the provider only
+        # runs when the caller gave a project path and no context.
+        context_source = ""
+        context_tokens = 0
+        if self._context_provider is not None and self._project_path and not context.strip():
+            collected = collect_context(
+                self._context_provider, self._project_path, task, self._config.context_budget
+            )
+            context_source = collected.source
+            context_tokens = collected.tokens
+            if not collected.empty:
+                context = collected.text
+
         for index in range(1, config.max_iterations + 1):
             if index == 1:
                 user = task_prompt(task, context)
@@ -161,6 +181,8 @@ class BslAgentLoop:
                 prompt_tokens=result.usage.input_tokens,
                 completion_tokens=result.usage.output_tokens,
                 llm_latency_ms=result.latency_ms,
+                context_source=context_source,
+                context_tokens=context_tokens,
             )
 
             extracted = extract_bsl_code(result.text)

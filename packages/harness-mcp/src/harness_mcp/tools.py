@@ -122,8 +122,8 @@ class HarnessServices:
             self._executor_probed = True
         return self._executor
 
-    def loop(self) -> BslAgentLoop:
-        return self._loop_factory()
+    def loop(self, project_path: str = "") -> BslAgentLoop:
+        return self._loop_factory(project_path)
 
     def tasks(self) -> list:
         return load_tasks(bundled_tasks_path())
@@ -134,7 +134,7 @@ class HarnessServices:
             jar=os.environ.get("BSL_JAR_PATH") or None,
         )
 
-    def _build_real_loop(self) -> BslAgentLoop:
+    def _build_real_loop(self, project_path: str = "") -> BslAgentLoop:
         path = os.environ.get("RLP_CONFIG")
         if path:
             config = RouterConfig.from_yaml(path)
@@ -143,7 +143,16 @@ class HarnessServices:
         router = Router.from_config(config)
         llm = harness_loop.RouterPort(router)
         verifier = self.verifier()
-        return BslAgentLoop(llm=llm, verifier=verifier, config=LoopConfig())
+        provider = None
+        if project_path:
+            provider = harness_loop.resolve_provider()
+        return BslAgentLoop(
+            llm=llm,
+            verifier=verifier,
+            config=LoopConfig(),
+            context_provider=provider,
+            project_path=project_path,
+        )
 
 
 def shutil_which(name: str) -> Optional[str]:
@@ -234,6 +243,11 @@ def tool_run_loop(services: HarnessServices, args: dict) -> ToolOutcome:
     context = args.get("context") or ""
     if not isinstance(context, str):
         return ToolOutcome("error: 'context' must be a string", True)
+    project_path = args.get("project_path") or ""
+    if not isinstance(project_path, str):
+        return ToolOutcome("error: 'project_path' must be a string", True)
+    if project_path and not os.path.isdir(project_path):
+        return ToolOutcome(f"error: 'project_path' is not a directory: {project_path}", True)
     max_iterations = args.get("max_iterations", 3)
     if (
         not isinstance(max_iterations, int)
@@ -243,7 +257,7 @@ def tool_run_loop(services: HarnessServices, args: dict) -> ToolOutcome:
         return ToolOutcome("error: 'max_iterations' must be an integer >= 1", True)
 
     try:
-        loop = services.loop()
+        loop = services.loop(project_path)
     except (RLLError, BslVerifyError, FileNotFoundError, ValueError) as exc:
         return ToolOutcome(
             f"loop unavailable: {exc} — configure russian-llm-pack (RLP_CONFIG / default "
@@ -275,9 +289,14 @@ def _run_loop_details(services: HarnessServices, run_id: str) -> ToolOutcome:
     result = cached["result"]
     lines = [f"run_loop {run_id} — task: {cached['task'][:120]}"]
     for iteration in result.iterations:
-        lines.append(f"iter {iteration.index}: model={iteration.model or '?'} "
-                     f"code_extracted={iteration.code_extracted} verified={iteration.verified} "
-                     f"errors={iteration.errors} warnings={iteration.warnings}")
+        ctx = ""
+        if iteration.context_source:
+            ctx = f" context={iteration.context_source}:{iteration.context_tokens}t"
+        lines.append(
+            f"iter {iteration.index}: model={iteration.model or '?'} "
+            f"code_extracted={iteration.code_extracted} verified={iteration.verified} "
+            f"errors={iteration.errors} warnings={iteration.warnings}{ctx}"
+        )
         for diagnostic in iteration.diagnostics:
             lines.append(f"    {diagnostic}")
     if result.judge is not None:
@@ -395,6 +414,13 @@ def build_registry() -> list[tuple[ToolDescriptor, Callable[[HarnessServices, di
                 input_schema={
                     "task": {"type": "string", "description": "Natural-language task"},
                     "context": {"type": "string", "description": "Extra context (optional)"},
+                    "project_path": {
+                        "type": "string",
+                        "description": (
+                            "Project directory to index for context (phase C; "
+                            "adapter choice: HARNESS_CONTEXT env)"
+                        ),
+                    },
                     "max_iterations": {
                         "type": "integer",
                         "description": "LLM call budget, default 3",

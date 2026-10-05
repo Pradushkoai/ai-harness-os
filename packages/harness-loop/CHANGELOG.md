@@ -2,6 +2,15 @@
 
 Формат — [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/), версионирование — [SemVer](https://semver.org/lang/ru/).
 
+## [0.9.0] — 2026-10-05
+
+### Added
+- **Контекстный слой (дорожная карта 2.1, фаза C).** Порт `ContextProviderPort.collect(project_path, task, max_tokens)` в новом модуле `context.py` + два адаптера. `BuiltInIndexer` — чистый stdlib: rglob `*.bsl`/`*.os` (лимиты 500 файлов / 64 КБ на файл), сигнатуры процедур и функций (до 40 на модуль, флаг Экспорт), ссылки на метаданные 1С, ранжирование модулей по релевантности к словам задачи, жёсткий токен-бюджет (дефолт 8000) с построчной обрезкой. `McpIndexerBackend` — subprocess-клиент к внешнему code-index MCP-серверу (spawn → initialize → tools/list → tools/call, тот же stdio-JSON-RPC что и harness-mcp); любая неудача тихо откатывает на встроенный индексер, предупреждение сохраняется в `note`. Выбор адаптера — одна переменная: `HARNESS_CONTEXT=builtin|mcp|none` (+ `CODE_INDEX_MCP_PATH`, `CODE_INDEX_MCP_TOOLS`).
+- **Проводка в цикл (C3):** `BslAgentLoop(context_provider=..., project_path=...)` — индексатор заполняет пустой сокет `context`, явный аргумент контекста всегда приоритетнее; `LoopConfig.context_budget`; источник и размер контекста фиксируются в каждом `IterationLog` (`context_source`, `context_tokens`) — наблюдаемость в отчётах, телеметрии и MCP-тулинге.
+- **CLI:** `harness-loop run --context-project <каталог> [--context-budget N]`; `doctor` показывает выбранный бэкенд контекста и его состояние.
+- **A/B-демо (C4):** `scripts/ab_context.py` — синтетическое дерево проекта из категорий бенчмарка, две руки (bare/context), сравнение L0/L1/L2; без LLM-ключей печатает дерево и образец контекста.
+- harness-mcp: `run_loop` принимает `project_path` (индексация контекста прямо из агента), детали прогона показывают `context=builtin:123t`.
+
 ## [0.8.0] — 2026-10-05
 
 ### Added
