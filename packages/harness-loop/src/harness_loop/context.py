@@ -47,6 +47,16 @@ _MAX_FILE_BYTES = 64 * 1024
 _MAX_SIGNATURES_PER_MODULE = 40
 _MAX_METADATA_PER_MODULE = 8
 
+# Live-calibrated tokenizer ratios (probe 2026-10-07, deepseek-chat
+# usage.prompt_tokens, texts sampled from the real UT11 dump): cyrillic
+# runs ~2.27-2.44 chars/token, ascii ~4.4. The old flat "4 chars per
+# token" overshot the cyrillic budget ~1.65x — the E-3 A/B measured a
+# nominal 8000-token budget injecting ~13K API tokens (8000*4/2.44).
+# Rule: these constants change only with a fresh live probe, never by
+# assumption (see README "Token budget calibration").
+_TOKENS_PER_CYRILLIC_CHAR = 0.44
+_TOKENS_PER_OTHER_CHAR = 0.23
+
 _ENV_BACKEND = "HARNESS_CONTEXT"
 _ENV_MCP_PATH = "CODE_INDEX_MCP_PATH"
 _ENV_MAX_FILES = "HARNESS_CONTEXT_MAX_FILES"
@@ -68,9 +78,21 @@ _STOP_WORDS = frozenset(
 
 
 def estimate_tokens(text: str) -> int:
-    """Cheap token estimate (~4 chars per token) — budgeting, not billing."""
+    """Live-calibrated token estimate — budgeting, not billing.
 
-    return max(1, len(text) // 4)
+    Cyrillic characters cost ~1.9x more tokenizer slots than ascii for
+    RU-LLM tokenizers (measured against deepseek-chat usage data, see
+    README "Token budget calibration"). Replaces the old flat
+    ``len(text) // 4`` which silently overshot the budget on cyrillic
+    project context by ~1.65x.
+    """
+
+    cyr = 0
+    for ch in text:
+        if "\u0400" <= ch <= "\u04FF":
+            cyr += 1
+    estimate = cyr * _TOKENS_PER_CYRILLIC_CHAR + (len(text) - cyr) * _TOKENS_PER_OTHER_CHAR
+    return max(1, round(estimate))
 
 
 @dataclass(frozen=True)

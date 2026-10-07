@@ -212,9 +212,34 @@ class TestBuiltInIndexer:
 
 
 class TestEstimateTokens:
-    def test_roughly_four_chars_per_token(self):
-        assert estimate_tokens("x" * 40) == 10
+    """Live-calibrated ratios (probe 2026-10-07, deepseek-chat usage data).
+
+    These numbers pin the calibration constants: changing them requires a
+    fresh live probe, not an assumption (README "Token budget calibration").
+    """
+
+    def test_ascii_uses_calibrated_ratio(self):
+        # ascii ~4.4 chars/token -> 40 chars round to 9 tokens
+        assert estimate_tokens("x" * 40) == 9
         assert estimate_tokens("") == 1
+
+    def test_cyrillic_is_near_twice_as_expensive(self):
+        # cyrillic ~2.27 chars/token -> 40 chars round to 18 tokens
+        assert estimate_tokens("Ф" * 40) == 18
+        assert estimate_tokens("Ф" * 40) > estimate_tokens("x" * 40) * 1.5
+
+    def test_old_flat_four_overshot_cyrillic_budget(self):
+        # E-3 finding: len//4 let ~13K API tokens into an 8000 budget on
+        # cyrillic context; the calibrated estimate must be strictly higher
+        text = ("Функция ПодпискиНаОтчёты(Параметры) Экспорт\n" * 40)
+        assert estimate_tokens(text) > len(text) // 4
+
+    def test_mixed_text_matches_probe_fit_within_tolerance(self):
+        # probe checkpoint: a 16064-char mixed block (13218 cyr + 2846 other)
+        # measured 6558 net API tokens; the calibrated estimate must land
+        # within the probe's own fit error (~1.4%) of the measured value
+        text = "Ф" * 13218 + "x" * 2846
+        assert abs(estimate_tokens(text) - 6558) <= 120
 
 
 FAKE_MCP_SERVER = textwrap.dedent(
